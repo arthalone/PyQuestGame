@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Conteúdo do PyQuest: lições, quizzes e desafios dos capítulos 1 a 14,
+Conteúdo do PyQuest: lições, quizzes e desafios dos capítulos 1 a 17,
 seguindo a sequência de temas do livro "Curso Intensivo de Python" (Eric Matthes).
 Os textos e exercícios são originais, criados para este app.
 """
@@ -4223,4 +4223,1388 @@ stats.salvar_recorde()
 }
 
 
-CAPITULOS = [CAP1, CAP2, CAP3, CAP4, CAP5, CAP6, CAP7, CAP8, CAP9, CAP10, CAP11, CAP12, CAP13, CAP14]
+# ---------------------------------------------------------------------------
+# PARTE II: PROJETO VISUALIZAÇÃO DE DADOS (capítulos 15 a 17)
+# Gráficos com matplotlib (viram imagens no painel de saída), arquivos CSV/JSON
+# de exemplo e um "requests de treino" com respostas simuladas.
+# ---------------------------------------------------------------------------
+
+import random as _random
+
+
+def _eixos(ns):
+    return [ax for f in ns.get("__figuras__", []) for ax in f.axes]
+
+
+def _linhas(ns):
+    return [l for ax in _eixos(ns) for l in ax.lines]
+
+
+def _num(v):
+    try:
+        return round(float(v), 6)
+    except (TypeError, ValueError):
+        return v
+
+
+def _ys(linha):
+    return [_num(v) for v in linha.get_ydata()]
+
+
+def _xs(linha):
+    return [_num(v) for v in linha.get_xdata()]
+
+
+def _pontos_scatter(ns):
+    out = []
+    for ax in _eixos(ns):
+        for c in ax.collections:
+            if type(c).__name__ == "PathCollection":
+                out.append([(round(float(x), 6), round(float(y), 6)) for x, y in c.get_offsets()])
+    return out
+
+
+def _barras(ns, horizontal=False):
+    out = []
+    for ax in _eixos(ns):
+        rects = [p for p in ax.patches if type(p).__name__ == "Rectangle"]
+        if rects:
+            if horizontal:
+                out.append([round(float(p.get_width()), 6) for p in rects])
+            else:
+                out.append([(round(p.get_x() + p.get_width() / 2, 6), round(float(p.get_height()), 6)) for p in rects])
+    return out
+
+
+def _tem_preenchimento(ns):
+    return any("PolyCollection" in type(c).__name__ for ax in _eixos(ns) for c in ax.collections)
+
+
+def tem_grafico(n=1):
+    return (lambda o, ns, c: len(ns.get("__figuras__", [])) >= n,
+            "Nenhum gráfico foi criado. Use fig, ax = plt.subplots() e desenhe nele." if n == 1
+            else f"Crie pelo menos {n} gráficos.")
+
+
+def titulo_com(trecho):
+    return (lambda o, ns, c: any(trecho.lower() in ax.get_title().lower() for ax in _eixos(ns)),
+            f"O gráfico precisa de um título com '{trecho}' (ax.set_title).")
+
+
+def rotulos_eixos():
+    return (lambda o, ns, c: any(ax.get_xlabel().strip() and ax.get_ylabel().strip() for ax in _eixos(ns)),
+            "Dê nome aos eixos com ax.set_xlabel(...) e ax.set_ylabel(...).")
+
+
+def linha_com(ys, msg=None):
+    alvo = [_num(v) for v in ys]
+    return (lambda o, ns, c: any(_ys(l) == alvo for l in _linhas(ns)),
+            msg or f"O gráfico precisa de uma linha (ax.plot) com os valores y = {ys}.")
+
+
+# ------------------------- dados de exemplo (simulados) -------------------------
+
+def _clima(estacao, seed, dias=31, faltas=(), base=22, ano=2025, mes=7):
+    r = _random.Random(seed)
+    linhas = ["ESTACAO,DATA,CHUVA_MM,TMAX,TMIN"]
+    dados = []
+    for d in range(1, dias + 1):
+        data = f"{ano}-{mes:02d}-{d:02d}"
+        tmax = base + r.randint(-4, 6)
+        tmin = tmax - r.randint(6, 11)
+        chuva = r.choice([0, 0, 0, 1.2, 3.5, 8.0, 12.4])
+        if d in faltas:
+            linhas.append(f"{estacao},{data},,,")
+            dados.append((data, None, None))
+        else:
+            linhas.append(f"{estacao},{data},{chuva},{tmax},{tmin}")
+            dados.append((data, tmax, tmin))
+    return "\n".join(linhas) + "\n", dados
+
+
+CLIMA_A, DADOS_A = _clima("SERRA AZUL", 7)
+CLIMA_B, DADOS_B = _clima("VALE VERDE", 21, dias=30, base=27, mes=1, ano=2026)
+CLIMA_FALTA_A, DADOS_FALTA_A = _clima("SERRA AZUL", 7, faltas=(3, 17, 18))
+CLIMA_FALTA_B, DADOS_FALTA_B = _clima("VALE VERDE", 21, dias=30, base=27, mes=1, ano=2026, faltas=(9,))
+
+
+def _terremotos(seed, n):
+    import json
+    lugares = ["Ilha da Neblina", "Serra do Trovão", "Baía dos Ventos", "Vale Esquecido", "Cabo das Gaivotas",
+               "Planalto Rubro", "Fossa Profunda", "Arquipélago Sereno", "Costa Dourada", "Lago Espelhado",
+               "Monte Fumegante", "Deserto de Sal"]
+    r = _random.Random(seed)
+    feats = []
+    for i in range(n):
+        mag = round(r.uniform(2.5, 7.2), 1)
+        lon = round(r.uniform(-170, 170), 2)
+        lat = round(r.uniform(-60, 65), 2)
+        lugar = f"{r.randint(5, 180)} km de {lugares[(i * 7 + seed) % len(lugares)]}"
+        feats.append({"type": "Feature",
+                      "properties": {"mag": mag, "place": lugar, "title": f"M {mag} - {lugar}"},
+                      "geometry": {"type": "Point", "coordinates": [lon, lat, round(r.uniform(5, 300), 1)]}})
+    dados = {"type": "FeatureCollection",
+             "metadata": {"title": "Terremotos de exemplo (dados simulados)", "count": n},
+             "features": feats}
+    return json.dumps(dados, ensure_ascii=False, indent=2), feats
+
+
+TERREMOTOS_A, FEATS_A = _terremotos(3, 12)
+TERREMOTOS_B, FEATS_B = _terremotos(11, 9)
+
+
+def _clima_ctx(texto, nome="clima.csv"):
+    return {"__arquivos__": {nome: texto}}
+
+
+def _quake_ctx(texto):
+    return {"__arquivos__": {"terremotos.json": texto}}
+
+
+# ------------------------------ testes do cap. 15 ------------------------------
+
+def _teste_passeio(ns):
+    R = ns["RandomWalk"]
+    w = R()
+    if getattr(w, "num_points", None) != 5000:
+        return False
+    w = R(300)
+    w.fill_walk()
+    xs, ys = w.x_values, w.y_values
+    if len(xs) != 300 or len(ys) != 300 or xs[0] != 0 or ys[0] != 0:
+        return False
+    passos = [(xs[i + 1] - xs[i], ys[i + 1] - ys[i]) for i in range(299)]
+    if any(dx == 0 and dy == 0 for dx, dy in passos):
+        return False
+    if any(abs(dx) > 4 or abs(dy) > 4 for dx, dy in passos):
+        return False
+    return len(set(passos)) > 5
+
+
+def _teste_dado(ns):
+    D = ns["Die"]
+    d = D()
+    if d.num_sides != 6:
+        return False
+    vistos = {d.roll() for _ in range(600)}
+    if vistos != set(range(1, 7)):
+        return False
+    d10 = D(10)
+    vistos = {d10.roll() for _ in range(1000)}
+    return vistos == set(range(1, 11))
+
+
+def _teste_cassino(ns):
+    f = ns["somar_dados"]
+    r = f(500)
+    if len(r) != 500 or min(r) < 2 or max(r) > 12 or len(set(r)) < 9:
+        return False
+    for barras in _barras(ns):
+        xs = [round(x) for x, _ in barras]
+        if xs == list(range(2, 13)) and sum(h for _, h in barras) == 1000:
+            return True
+    return False
+
+
+# ------------------------------ testes do cap. 16 ------------------------------
+
+def _resumo_clima(dados):
+    validos = [d for d in dados if d[1] is not None]
+    mx = max(validos, key=lambda d: d[1])
+    mn = min(validos, key=lambda d: d[2])
+    faltas = [d[0] for d in dados if d[1] is None]
+    return mx, mn, faltas, validos
+
+
+def _casos_meteorologista():
+    casos = []
+    for texto, dados in ((CLIMA_FALTA_A, DADOS_FALTA_A), (CLIMA_FALTA_B, DADOS_FALTA_B)):
+        mx, mn, faltas, validos = _resumo_clima(dados)
+        esperado = (f"Máxima do período: {mx[1]} em {mx[0]}\n"
+                    f"Mínima do período: {mn[2]} em {mn[0]}\n"
+                    f"Dias sem dados: {len(faltas)}")
+        casos.append(caso([
+            saida(esperado), tem_grafico(),
+            linha_com([d[1] for d in validos], "O gráfico precisa de uma linha com as máximas dos dias válidos."),
+            linha_com([d[2] for d in validos], "O gráfico precisa de uma linha com as mínimas dos dias válidos."),
+            regra(lambda o, n, c: _tem_preenchimento(n),
+                  "Pinte o espaço entre as linhas com ax.fill_between(datas, maximas, minimas, alpha=0.1)."),
+        ], _clima_ctx(texto)))
+    return casos
+
+
+def _casos_maximas():
+    casos = []
+    for texto, dados in ((CLIMA_A, DADOS_A), (CLIMA_B, DADOS_B)):
+        maximas = [d[1] for d in dados]
+        casos.append(caso([var_igual("maximas", maximas), tem_grafico(), linha_com(maximas)], _clima_ctx(texto)))
+    return casos
+
+
+def _casos_faltando():
+    casos = []
+    for texto, dados in ((CLIMA_FALTA_A, DADOS_FALTA_A), (CLIMA_FALTA_B, DADOS_FALTA_B)):
+        validos = [d for d in dados if d[1] is not None]
+        linhas_txt = "\n".join(f"Faltando dados para {d[0]}" for d in dados if d[1] is None)
+        esperado = linhas_txt + f"\nDias válidos: {len(validos)}"
+        casos.append(caso([saida(esperado), var_igual("maximas", [d[1] for d in validos])], _clima_ctx(texto)))
+    return casos
+
+
+def _casos_cabecalho():
+    return [caso([saida("0 ESTACAO\n1 DATA\n2 CHUVA_MM\n3 TMAX\n4 TMIN")], _clima_ctx(CLIMA_A))]
+
+
+def _casos_bug_csv():
+    casos = []
+    for texto, dados in ((CLIMA_A, DADOS_A), (CLIMA_B, DADOS_B)):
+        casos.append(caso([saida(f"Maior máxima: {max(d[1] for d in dados)}")], _clima_ctx(texto)))
+    return casos
+
+
+def _casos_fortes():
+    casos = []
+    for texto, feats in ((TERREMOTOS_A, FEATS_A), (TERREMOTOS_B, FEATS_B)):
+        fortes = [f["properties"]["title"] for f in feats if f["properties"]["mag"] >= 5]
+        esperado = f"Total de terremotos: {len(feats)}\nFortes (5 ou mais): {len(fortes)}\n" + "\n".join(fortes)
+        casos.append(caso([saida(esperado)], _quake_ctx(texto)))
+    return casos
+
+
+def _casos_mapa():
+    casos = []
+    for texto, feats in ((TERREMOTOS_A, FEATS_A), (TERREMOTOS_B, FEATS_B)):
+        pts = [(round(f["geometry"]["coordinates"][0], 6), round(f["geometry"]["coordinates"][1], 6)) for f in feats]
+        mags = [f["properties"]["mag"] for f in feats]
+        casos.append(caso([
+            var_igual("mags", mags), tem_grafico(),
+            regra(lambda o, n, c, pts=pts: pts in _pontos_scatter(n),
+                  "O gráfico de dispersão precisa ter x = longitude e y = latitude de cada terremoto, na ordem do arquivo."),
+        ], _quake_ctx(texto)))
+    return casos
+
+
+# ------------------------------ testes do cap. 17 ------------------------------
+
+def _api_itens(ling):
+    import sys
+    return sys.modules["requests"].get(
+        f"https://api.github.com/search/repositories?q=language:{ling}+sort:stars").json()["items"]
+
+
+def _esperado_top3():
+    linhas = []
+    for repo in _api_itens("python")[:3]:
+        linhas.append(f"{repo['name']} (de {repo['owner']['login']}): {repo['stargazers_count']} estrelas")
+    return "\n".join(linhas)
+
+
+def _esperado_status():
+    import sys
+    r = sys.modules["requests"].get("https://api.github.com/search/repositories?q=language:python+sort:stars")
+    return f"Status: {r.status_code}\nTotal de repositórios: {r.json()['total_count']}"
+
+
+def _esperado_hn():
+    import sys
+    rq = sys.modules["requests"]
+    ids = rq.get("https://hacker-news.firebaseio.com/v0/topstories.json").json()[:5]
+    itens = [rq.get(f"https://hacker-news.firebaseio.com/v0/item/{i}.json").json() for i in ids]
+    itens.sort(key=lambda d: d["descendants"], reverse=True)
+    return "\n".join(f"{d['title']} - {d['descendants']} comentários" for d in itens)
+
+
+def _teste_buscar(ns):
+    f = ns["buscar"]
+    ok = f("https://hacker-news.firebaseio.com/v0/item/40101.json")
+    if not isinstance(ok, dict) or ok.get("id") != 40101:
+        return False
+    return f("https://api.github.com/nao-existe") is None
+
+
+def _teste_barras_api(ns):
+    estrelas = [r["stargazers_count"] for r in _api_itens("python")]
+    alvo = [round(float(v), 6) for v in estrelas]
+    return any(sorted(b) == sorted(alvo) for b in _barras(ns, horizontal=True))
+
+
+def _teste_ranking(ns):
+    f = ns["ranking_linguagem"]
+    for ling in ("python", "javascript", "rust"):
+        esperado = sorted(((r["name"], r["stargazers_count"]) for r in _api_itens(ling)),
+                          key=lambda t: t[1], reverse=True)[:5]
+        res = f(ling)
+        if [tuple(t) for t in (res or [])] != esperado:
+            return False
+    return f("cobol") == []
+
+
+# ---------------------------------------------------------------------------
+# CAPÍTULO 15: Gerando dados
+# ---------------------------------------------------------------------------
+
+CAP15 = {
+    "num": 15,
+    "titulo": "Dados: Gerando Gráficos",
+    "subtitulo": "matplotlib, dispersão, passeio aleatório e dados",
+    "licoes": [
+        {
+            "titulo": "Seu primeiro gráfico",
+            "texto": [
+                "Começa o projeto de **visualização de dados**: transformar números em imagens que contam uma história.",
+                "A biblioteca mais usada é a **matplotlib**. Por convenção, importamos assim: `import matplotlib.pyplot as plt`.",
+                "`fig, ax = plt.subplots()` cria uma **figura** (a imagem inteira) e um **eixo** `ax` (o gráfico em si). "
+                "`ax.plot(x, y)` desenha uma linha ligando os pontos.",
+                "Dê nome a tudo: `ax.set_title()`, `ax.set_xlabel()` e `ax.set_ylabel()`. "
+                "`linewidth=3` engrossa a linha e `ax.tick_params(labelsize=14)` aumenta os números dos eixos.",
+                "No fim, `plt.show()` mostra o gráfico. Aqui no PyQuest, ele aparece como imagem embaixo da saída. "
+                "(Na primeira vez, o site leva alguns segundos para carregar o matplotlib.)",
+            ],
+            "exemplo": _c('''
+import matplotlib.pyplot as plt
+
+entradas = [1, 2, 3, 4, 5]
+quadrados = [1, 4, 9, 16, 25]
+
+fig, ax = plt.subplots()
+ax.plot(entradas, quadrados, linewidth=3)
+
+ax.set_title("Números ao quadrado", fontsize=20)
+ax.set_xlabel("Valor", fontsize=12)
+ax.set_ylabel("Quadrado do valor", fontsize=12)
+ax.tick_params(labelsize=12)
+
+plt.show()
+'''),
+        },
+        {
+            "titulo": "Estilos e dispersão",
+            "texto": [
+                "`plt.style.use('ggplot')` muda a aparência do gráfico todo. Veja os estilos disponíveis com "
+                "`print(plt.style.available)`.",
+                "`ax.scatter(x, y)` desenha **pontos soltos**, sem ligar. Ótimo para muitos dados.",
+                "Uma list comprehension gera os valores rapidinho: `y = [x**2 for x in x_values]`.",
+                "## Cores que contam algo",
+                "`c=y, cmap=plt.cm.Blues` pinta cada ponto conforme o seu valor: os pequenos ficam claros e os grandes, escuros. "
+                "Isso é um **mapa de cores**.",
+                "`ax.axis([0, 1100, 0, 1_100_000])` define o intervalo de cada eixo, e `plt.savefig('grafico.png')` salva a imagem num arquivo.",
+            ],
+            "exemplo": _c('''
+import matplotlib.pyplot as plt
+
+x_values = range(1, 1001)
+y_values = [x**2 for x in x_values]
+
+plt.style.use("ggplot")
+fig, ax = plt.subplots()
+ax.scatter(x_values, y_values, c=y_values, cmap=plt.cm.Blues, s=10)
+
+ax.set_title("Quadrados de 1 a 1000")
+ax.set_xlabel("Valor")
+ax.set_ylabel("Quadrado")
+ax.axis([0, 1100, 0, 1_100_000])
+ax.ticklabel_format(style="plain")
+
+plt.show()
+'''),
+        },
+        {
+            "titulo": "O passeio aleatório",
+            "texto": [
+                "Um **passeio aleatório** é um caminho em que cada passo vai para uma direção sorteada. Ele aparece em "
+                "física, biologia e finanças.",
+                "A classe `RandomWalk` do livro guarda as listas `x_values` e `y_values`, começando em `[0]`. "
+                "O método `fill_walk()` sorteia passos até ter `num_points` pontos:",
+                "• a direção (`choice([1, -1])`) e a distância (`choice([0, 1, 2, 3, 4])`), para x e para y;",
+                "• passos parados (x e y iguais a zero) são descartados com `continue`.",
+                "Para ver o caminho, pinte os pontos pela ordem: `c=range(num_points)`. "
+                "Cada execução gera um desenho diferente!",
+            ],
+            "exemplo": _c('''
+from random import choice
+import matplotlib.pyplot as plt
+
+
+class RandomWalk:
+    def __init__(self, num_points=5000):
+        self.num_points = num_points
+        self.x_values = [0]
+        self.y_values = [0]
+
+    def fill_walk(self):
+        while len(self.x_values) < self.num_points:
+            x_step = choice([1, -1]) * choice([0, 1, 2, 3, 4])
+            y_step = choice([1, -1]) * choice([0, 1, 2, 3, 4])
+            if x_step == 0 and y_step == 0:
+                continue
+            self.x_values.append(self.x_values[-1] + x_step)
+            self.y_values.append(self.y_values[-1] + y_step)
+
+
+rw = RandomWalk(3000)
+rw.fill_walk()
+
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.scatter(rw.x_values, rw.y_values, c=range(rw.num_points), cmap=plt.cm.Blues, s=4)
+ax.scatter(0, 0, c="green", s=60)
+ax.scatter(rw.x_values[-1], rw.y_values[-1], c="red", s=60)
+ax.set_aspect("equal")
+ax.set_title("Passeio aleatório: verde = início, vermelho = fim")
+plt.show()
+'''),
+        },
+        {
+            "titulo": "Rolando dados",
+            "texto": [
+                "Com `randint` simulamos dados. A classe `Die` do livro tem `num_sides` (padrão 6) e o método `roll()`.",
+                "Rolando mil vezes e contando cada face com `resultados.count(valor)`, temos as **frequências**. "
+                "Um gráfico de **barras** (`ax.bar(x, alturas)`) mostra se o dado é justo.",
+                "Somando DOIS dados, o 7 aparece muito mais que o 2 ou o 12: há mais combinações que dão 7.",
+                "O livro usa a biblioteca **Plotly** para essa parte, que gera gráficos interativos. Aqui usamos o "
+                "matplotlib, mas a ideia é a mesma.",
+            ],
+            "exemplo": _c('''
+from random import randint
+import matplotlib.pyplot as plt
+
+
+class Die:
+    def __init__(self, num_sides=6):
+        self.num_sides = num_sides
+
+    def roll(self):
+        return randint(1, self.num_sides)
+
+
+d1, d2 = Die(), Die()
+resultados = [d1.roll() + d2.roll() for _ in range(1000)]
+
+somas = list(range(2, 13))
+frequencias = [resultados.count(s) for s in somas]
+print(dict(zip(somas, frequencias)))
+
+fig, ax = plt.subplots()
+ax.bar(somas, frequencias)
+ax.set_xticks(somas)
+ax.set_title("Dois dados de 6 lados, 1000 vezes")
+ax.set_xlabel("Soma")
+ax.set_ylabel("Frequência")
+plt.show()
+'''),
+        },
+    ],
+    "quiz": [
+        {"pergunta": "Qual é a forma mais comum de importar o matplotlib?",
+         "opcoes": ["import matplotlib as m", "import matplotlib.pyplot as plt", "from plot import *", "import pyplot"],
+         "correta": 1, "explicacao": "plt é o apelido padrão para matplotlib.pyplot."},
+        {"pergunta": "O que `fig, ax = plt.subplots()` cria?",
+         "opcoes": ["Só uma lista", "Uma figura e um eixo (o gráfico) para desenhar", "Um arquivo PNG", "Uma janela de jogo"],
+         "correta": 1, "explicacao": "fig é a imagem toda; ax é a área onde você desenha."},
+        {"pergunta": "Qual é a diferença entre ax.plot() e ax.scatter()?",
+         "opcoes": ["Nenhuma", "plot liga os pontos com linha; scatter desenha pontos soltos",
+                    "scatter só aceita 2 pontos", "plot só funciona com textos"], "correta": 1,
+         "explicacao": "Linha para tendências, dispersão para muitos pontos individuais."},
+        {"pergunta": "O que é mostrado?", "codigo": "x = [1, 2, 3]\ny = [v**2 for v in x]\nprint(y)",
+         "opcoes": ["[1, 2, 3]", "[2, 4, 6]", "[1, 4, 9]", "[1, 8, 27]"], "correta": 2,
+         "explicacao": "A list comprehension eleva cada valor ao quadrado."},
+        {"pergunta": "No passeio aleatório, por que descartar o passo com x_step e y_step iguais a 0?",
+         "opcoes": ["Porque daria erro", "Porque o ponto não sairia do lugar", "Para o gráfico ficar azul", "Para economizar memória"],
+         "correta": 1, "explicacao": "Um passo (0, 0) repetiria o mesmo ponto."},
+        {"pergunta": "O que `c=y_values, cmap=plt.cm.Blues` faz num scatter?",
+         "opcoes": ["Pinta tudo de azul igual", "Pinta cada ponto num tom de azul conforme seu valor",
+                    "Deixa o fundo azul", "Esconde os pontos"], "correta": 1,
+         "explicacao": "É um mapa de cores: valores menores ficam claros, maiores ficam escuros."},
+        {"pergunta": "Somando dois dados de 6 lados, qual soma aparece com mais frequência?",
+         "opcoes": ["2", "7", "12", "Todas iguais"], "correta": 1,
+         "explicacao": "Há 6 combinações que dão 7, contra só 1 para o 2 e 1 para o 12."},
+    ],
+    "desafios": [
+        {
+            "titulo": "Cubos",
+            "enunciado": "Faça um gráfico de LINHA com os cubos de 1 a 5 (x = 1, 2, 3, 4, 5 e y = 1, 8, 27, 64, 125). "
+                         "Use o título 'Cubos' e dê nome aos dois eixos.",
+            "inicial": "import matplotlib.pyplot as plt\n\n# Seu código aqui\n",
+            "dica": "y = [x**3 for x in x_values]; depois fig, ax = plt.subplots() e ax.plot(x_values, y).",
+            "solucao": _c('''
+import matplotlib.pyplot as plt
+
+x_values = [1, 2, 3, 4, 5]
+cubos = [x**3 for x in x_values]
+
+fig, ax = plt.subplots()
+ax.plot(x_values, cubos, linewidth=3)
+ax.set_title("Cubos")
+ax.set_xlabel("Valor")
+ax.set_ylabel("Cubo do valor")
+plt.show()
+'''),
+            "casos": [caso([tem_grafico(), linha_com([1, 8, 27, 64, 125]), titulo_com("Cubos"), rotulos_eixos()])],
+        },
+        {
+            "titulo": "Chuva de pontos",
+            "enunciado": "Faça um gráfico de DISPERSÃO (ax.scatter) com os números de 1 a 50 no eixo x e seus quadrados no "
+                         "eixo y, colorindo os pontos pelo valor de y com o mapa de cores plt.cm.Greens.",
+            "inicial": "import matplotlib.pyplot as plt\n\n# Seu código aqui\n",
+            "dica": "x_values = range(1, 51). No scatter: c=y_values, cmap=plt.cm.Greens.",
+            "solucao": _c('''
+import matplotlib.pyplot as plt
+
+x_values = range(1, 51)
+y_values = [x**2 for x in x_values]
+
+fig, ax = plt.subplots()
+ax.scatter(x_values, y_values, c=y_values, cmap=plt.cm.Greens, s=20)
+ax.set_title("Quadrados de 1 a 50")
+plt.show()
+'''),
+            "casos": [caso([tem_grafico(),
+                            regra(lambda o, n, c: [(float(x), float(x * x)) for x in range(1, 51)] in _pontos_scatter(n),
+                                  "O scatter precisa ter os 50 pontos (x, x²) para x de 1 a 50."),
+                            tem("cmap", "Use o parâmetro cmap para colorir os pontos.")])],
+        },
+        {
+            "titulo": "O andarilho",
+            "enunciado": "Crie a classe `RandomWalk(num_points=5000)` com x_values e y_values começando em [0] e o método "
+                         "fill_walk(), que sorteia passos (direção 1 ou -1, distância de 0 a 4, para x e para y), descarta "
+                         "passos parados e para quando houver num_points pontos.",
+            "inicial": "from random import choice\n\n\nclass RandomWalk:\n    pass\n",
+            "dica": "while len(self.x_values) < self.num_points: ... e use continue quando x_step == 0 and y_step == 0.",
+            "solucao": _c('''
+from random import choice
+
+
+class RandomWalk:
+    def __init__(self, num_points=5000):
+        self.num_points = num_points
+        self.x_values = [0]
+        self.y_values = [0]
+
+    def fill_walk(self):
+        while len(self.x_values) < self.num_points:
+            x_step = choice([1, -1]) * choice([0, 1, 2, 3, 4])
+            y_step = choice([1, -1]) * choice([0, 1, 2, 3, 4])
+            if x_step == 0 and y_step == 0:
+                continue
+            self.x_values.append(self.x_values[-1] + x_step)
+            self.y_values.append(self.y_values[-1] + y_step)
+'''),
+            "casos": [caso([classe("RandomWalk"),
+                            regra(lambda o, n, c: _teste_passeio(n),
+                                  "Teste: RandomWalk() tem num_points 5000; RandomWalk(300).fill_walk() gera listas com 300 "
+                                  "pontos começando em 0, sem passos parados e com passos de no máximo 4 em cada direção.")])],
+        },
+        {
+            "titulo": "Dado justo",
+            "enunciado": "Crie a classe `Die(num_sides=6)` com o método roll(), que devolve um número aleatório de 1 até num_sides.",
+            "inicial": "from random import randint\n\n\nclass Die:\n    pass\n",
+            "dica": "return randint(1, self.num_sides)",
+            "solucao": _c('''
+from random import randint
+
+
+class Die:
+    def __init__(self, num_sides=6):
+        self.num_sides = num_sides
+
+    def roll(self):
+        return randint(1, self.num_sides)
+'''),
+            "casos": [caso([classe("Die"),
+                            regra(lambda o, n, c: _teste_dado(n),
+                                  "Teste: Die() tem 6 lados e, em 600 rolagens, sai cada valor de 1 a 6 (e nada fora disso); "
+                                  "Die(10) sorteia de 1 a 10.")])],
+        },
+        {
+            "titulo": "Contando frequências",
+            "enunciado": "Crie a função `frequencias(resultados, lados)` que devolve uma lista com quantas vezes cada face "
+                         "(de 1 até lados) apareceu.\n\nExemplo: frequencias([1, 3, 3, 6], 6) devolve [1, 0, 2, 0, 0, 1].",
+            "inicial": "def frequencias(resultados, lados):\n    pass\n\n\nprint(frequencias([1, 3, 3, 6], 6))\n",
+            "dica": "[resultados.count(face) for face in range(1, lados + 1)]",
+            "solucao": _c('''
+def frequencias(resultados, lados):
+    return [resultados.count(face) for face in range(1, lados + 1)]
+
+
+print(frequencias([1, 3, 3, 6], 6))
+'''),
+            "casos": [caso([funcao("frequencias"),
+                            chama("frequencias", ([1, 3, 3, 6], 6), [1, 0, 2, 0, 0, 1]),
+                            chama("frequencias", ([], 4), [0, 0, 0, 0]),
+                            chama("frequencias", ([2, 2, 2, 8, 1], 8), [1, 3, 0, 0, 0, 0, 0, 1])])],
+        },
+        {
+            "titulo": "Caça-bugs: a curva torta",
+            "enunciado": "O gráfico deveria mostrar os quadrados de 1 a 5 (1, 4, 9, 16, 25), mas a curva começa no zero e "
+                         "termina no 16. Conserte.",
+            "inicial": _c('''
+import matplotlib.pyplot as plt
+
+x_values = [1, 2, 3, 4, 5]
+quadrados = [n**2 for n in range(5)]
+
+fig, ax = plt.subplots()
+ax.plot(x_values, quadrados)
+ax.set_title("Quadrados")
+plt.show()
+''') + "\n",
+            "dica": "range(5) vai de 0 a 4. De onde deveriam vir os valores?",
+            "solucao": _c('''
+import matplotlib.pyplot as plt
+
+x_values = [1, 2, 3, 4, 5]
+quadrados = [n**2 for n in x_values]
+
+fig, ax = plt.subplots()
+ax.plot(x_values, quadrados)
+ax.set_title("Quadrados")
+plt.show()
+'''),
+            "casos": [caso([tem_grafico(), linha_com([1, 4, 9, 16, 25])])],
+        },
+    ],
+    "chefe": {
+        "titulo": "O Cassino dos Dados",
+        "enunciado": "Crie a função `somar_dados(n)`, que rola dois dados de 6 lados n vezes e devolve a lista com as somas.\n\n"
+                     "Depois, use-a com n = 1000 e faça um gráfico de BARRAS com as frequências de cada soma de 2 a 12 "
+                     "(uma barra para cada soma, em ordem). Coloque título e nome nos eixos.",
+        "inicial": "from random import randint\nimport matplotlib.pyplot as plt\n\n\ndef somar_dados(n):\n    pass\n",
+        "dica": "resultados = somar_dados(1000); somas = list(range(2, 13)); frequencias = [resultados.count(s) for s in somas]; "
+                "ax.bar(somas, frequencias).",
+        "solucao": _c('''
+from random import randint
+import matplotlib.pyplot as plt
+
+
+def somar_dados(n):
+    return [randint(1, 6) + randint(1, 6) for _ in range(n)]
+
+
+resultados = somar_dados(1000)
+somas = list(range(2, 13))
+frequencias = [resultados.count(s) for s in somas]
+
+fig, ax = plt.subplots()
+ax.bar(somas, frequencias)
+ax.set_xticks(somas)
+ax.set_title("Soma de dois dados (1000 rolagens)")
+ax.set_xlabel("Soma")
+ax.set_ylabel("Frequência")
+plt.show()
+'''),
+        "casos": [caso([funcao("somar_dados"), tem_grafico(), rotulos_eixos(),
+                        regra(lambda o, n, c: _teste_cassino(n),
+                              "Teste: somar_dados(500) devolve 500 somas entre 2 e 12; e o gráfico precisa ter 11 barras, "
+                              "nas posições 2 a 12, somando 1000 no total.")])],
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# CAPÍTULO 16: Baixando dados
+# ---------------------------------------------------------------------------
+
+CAP16 = {
+    "num": 16,
+    "titulo": "Dados: CSV e JSON",
+    "subtitulo": "Clima em CSV, datas, dados faltando e terremotos em JSON",
+    "licoes": [
+        {
+            "titulo": "Lendo um CSV",
+            "texto": [
+                "Muitos dados chegam em **CSV** (valores separados por vírgula): cada linha é um registro, e a primeira "
+                "costuma ser o **cabeçalho** com o nome das colunas.",
+                "O módulo `csv` faz o trabalho pesado: `reader = csv.reader(linhas)` transforma cada linha numa lista. "
+                "`next(reader)` pega a próxima linha; usado uma vez, pega o cabeçalho.",
+                "Com `enumerate(cabecalho)` você descobre o índice de cada coluna.",
+                "Nesta lição há um arquivo de exemplo, `clima.csv`, com dados **simulados** de uma estação meteorológica fictícia.",
+            ],
+            "exemplo": _c('''
+import csv
+from pathlib import Path
+
+linhas = Path("clima.csv").read_text().splitlines()
+reader = csv.reader(linhas)
+cabecalho = next(reader)
+
+for indice, coluna in enumerate(cabecalho):
+    print(indice, coluna)
+
+maximas = []
+for linha in reader:
+    maximas.append(int(linha[3]))
+print("Máximas:", maximas)
+'''),
+            "ctx": _clima_ctx(CLIMA_A),
+        },
+        {
+            "titulo": "Datas e gráficos no tempo",
+            "texto": [
+                "No CSV, a data é só texto: `'2025-07-04'`. Para o Python entender, use `datetime.strptime(texto, '%Y-%m-%d')`.",
+                "`%Y` é o ano com 4 dígitos, `%m` o mês e `%d` o dia. Há outros, como `%B` (nome do mês) e `%H` (hora).",
+                "Com datas de verdade no eixo x, o matplotlib organiza o calendário sozinho. `fig.autofmt_xdate()` inclina "
+                "as datas para não ficarem encavaladas.",
+            ],
+            "exemplo": _c('''
+import csv
+from datetime import datetime
+from pathlib import Path
+import matplotlib.pyplot as plt
+
+reader = csv.reader(Path("clima.csv").read_text().splitlines())
+next(reader)
+
+datas, maximas = [], []
+for linha in reader:
+    datas.append(datetime.strptime(linha[1], "%Y-%m-%d"))
+    maximas.append(int(linha[3]))
+
+print("Primeiro dia:", datas[0].strftime("%d/%m/%Y"))
+
+fig, ax = plt.subplots()
+ax.plot(datas, maximas, color="red")
+ax.set_title("Temperaturas máximas, julho de 2025")
+ax.set_ylabel("Temperatura (°C)")
+fig.autofmt_xdate()
+plt.show()
+'''),
+            "ctx": _clima_ctx(CLIMA_A),
+        },
+        {
+            "titulo": "Máximas, mínimas e dados faltando",
+            "texto": [
+                "Dá para desenhar várias linhas no mesmo eixo: chame `ax.plot()` uma vez para cada.",
+                "`ax.fill_between(datas, maximas, minimas, facecolor='blue', alpha=0.1)` pinta o espaço entre as duas "
+                "linhas. `alpha` é a transparência (0 = invisível, 1 = sólido).",
+                "## Dados faltando",
+                "Estações quebram, e o CSV fica com campos vazios. `int('')` causa `ValueError`. A solução do livro é um "
+                "`try`/`except`/`else`: se der erro, avisa e pula o dia; senão, guarda os valores.",
+            ],
+            "exemplo": _c('''
+import csv
+from datetime import datetime
+from pathlib import Path
+import matplotlib.pyplot as plt
+
+reader = csv.reader(Path("clima.csv").read_text().splitlines())
+next(reader)
+
+datas, maximas, minimas = [], [], []
+for linha in reader:
+    data = datetime.strptime(linha[1], "%Y-%m-%d")
+    try:
+        maxima = int(linha[3])
+        minima = int(linha[4])
+    except ValueError:
+        print(f"Faltando dados para {data.date()}")
+    else:
+        datas.append(data)
+        maximas.append(maxima)
+        minimas.append(minima)
+
+fig, ax = plt.subplots()
+ax.plot(datas, maximas, color="red", alpha=0.6)
+ax.plot(datas, minimas, color="blue", alpha=0.6)
+ax.fill_between(datas, maximas, minimas, facecolor="blue", alpha=0.1)
+ax.set_title("Máximas e mínimas (dados simulados)")
+fig.autofmt_xdate()
+plt.show()
+'''),
+            "ctx": _clima_ctx(CLIMA_FALTA_A),
+        },
+        {
+            "titulo": "Terremotos em JSON",
+            "texto": [
+                "Dados geográficos costumam vir em **GeoJSON**, um JSON com uma lista de `features`. Cada feature tem "
+                "`properties` (magnitude, local, título) e `geometry`, com as coordenadas `[longitude, latitude, profundidade]`.",
+                "`json.loads(texto)` transforma o arquivo em dicionários e listas. Daí é só navegar: "
+                "`feature['properties']['mag']`, `feature['geometry']['coordinates'][0]`...",
+                "O livro desenha os terremotos num mapa-múndi com o Plotly. Aqui usamos um scatter: longitude no x, "
+                "latitude no y, e o tamanho do ponto conforme a magnitude.",
+                "O arquivo `terremotos.json` desta lição traz terremotos **simulados**, em lugares inventados.",
+            ],
+            "exemplo": _c('''
+import json
+from pathlib import Path
+import matplotlib.pyplot as plt
+
+dados = json.loads(Path("terremotos.json").read_text())
+print(dados["metadata"]["title"])
+terremotos = dados["features"]
+print("Quantidade:", len(terremotos))
+
+mags, lons, lats = [], [], []
+for t in terremotos:
+    mags.append(t["properties"]["mag"])
+    lons.append(t["geometry"]["coordinates"][0])
+    lats.append(t["geometry"]["coordinates"][1])
+
+print("Primeiro:", terremotos[0]["properties"]["title"])
+
+fig, ax = plt.subplots(figsize=(9, 5))
+ax.scatter(lons, lats, s=[m**3 for m in mags], c=mags, cmap=plt.cm.Reds, alpha=0.7)
+ax.axis([-180, 180, -90, 90])
+ax.set_title("Terremotos (tamanho = magnitude)")
+ax.set_xlabel("Longitude")
+ax.set_ylabel("Latitude")
+plt.show()
+'''),
+            "ctx": _quake_ctx(TERREMOTOS_A),
+        },
+    ],
+    "quiz": [
+        {"pergunta": "O que `next(reader)` faz logo depois de criar o csv.reader?",
+         "opcoes": ["Pula o arquivo todo", "Pega a primeira linha (geralmente o cabeçalho)", "Fecha o arquivo", "Conta as linhas"],
+         "correta": 1, "explicacao": "next() devolve a próxima linha; a primeira é o cabeçalho."},
+        {"pergunta": "Em `datetime.strptime('2025-07-04', '%Y-%m-%d')`, o que é `%m`?",
+         "opcoes": ["Minutos", "Mês", "Milissegundos", "O nome do mês"], "correta": 1,
+         "explicacao": "%m é o mês com dois dígitos; %M (maiúsculo) seria minutos."},
+        {"pergunta": "O que `alpha=0.1` faz num gráfico?",
+         "opcoes": ["Deixa a cor quase transparente", "Ordena os dados", "Aumenta a linha", "Muda o título"], "correta": 0,
+         "explicacao": "alpha vai de 0 (invisível) a 1 (sólido)."},
+        {"pergunta": "O que acontece com `int('')`?",
+         "opcoes": ["Devolve 0", "Devolve None", "Dá ValueError", "Devolve ''"], "correta": 2,
+         "explicacao": "Texto vazio não é um número. Por isso o try/except para dados faltando."},
+        {"pergunta": "O que é mostrado?",
+         "codigo": "import json\nd = json.loads('{\"geometry\": {\"coordinates\": [-70.5, 18.2, 10]}}')\nprint(d['geometry']['coordinates'][1])",
+         "opcoes": ["-70.5", "18.2", "10", "Erro"], "correta": 1,
+         "explicacao": "No GeoJSON, a ordem é [longitude, latitude, profundidade]: o índice 1 é a latitude."},
+        {"pergunta": "Para que serve `fig.autofmt_xdate()`?",
+         "opcoes": ["Converter textos em datas", "Inclinar as datas do eixo x para não se sobreporem", "Ordenar as datas", "Apagar datas repetidas"],
+         "correta": 1, "explicacao": "Ela só ajusta a aparência dos rótulos de data."},
+        {"pergunta": "Qual método pinta a área entre duas linhas?",
+         "opcoes": ["ax.paint()", "ax.fill_between()", "ax.area()", "ax.shade()"], "correta": 1,
+         "explicacao": "fill_between(x, y1, y2) preenche entre as curvas y1 e y2."},
+    ],
+    "desafios": [
+        {
+            "titulo": "Cabeçalho do CSV",
+            "enunciado": "Leia o arquivo 'clima.csv' e mostre cada coluna do cabeçalho com o seu índice, no formato '0 ESTACAO'.",
+            "inicial": "import csv\nfrom pathlib import Path\n\n# Seu código aqui\n",
+            "dica": "reader = csv.reader(Path('clima.csv').read_text().splitlines()); cabecalho = next(reader); for i, col in enumerate(cabecalho): print(i, col)",
+            "solucao": _c('''
+import csv
+from pathlib import Path
+
+reader = csv.reader(Path("clima.csv").read_text().splitlines())
+cabecalho = next(reader)
+for indice, coluna in enumerate(cabecalho):
+    print(indice, coluna)
+'''),
+            "casos": _casos_cabecalho(),
+        },
+        {
+            "titulo": "As máximas do mês",
+            "enunciado": "Leia 'clima.csv' (colunas: ESTACAO, DATA, CHUVA_MM, TMAX, TMIN), guarde as temperaturas máximas "
+                         "como inteiros na lista `maximas` e desenhe um gráfico de linha com elas.\n\n"
+                         "O Verificar testa com arquivos de duas estações diferentes.",
+            "inicial": "import csv\nfrom pathlib import Path\nimport matplotlib.pyplot as plt\n\n# Seu código aqui\n",
+            "dica": "Pule o cabeçalho com next(reader). A coluna TMAX é a de índice 3.",
+            "solucao": _c('''
+import csv
+from pathlib import Path
+import matplotlib.pyplot as plt
+
+reader = csv.reader(Path("clima.csv").read_text().splitlines())
+next(reader)
+maximas = []
+for linha in reader:
+    maximas.append(int(linha[3]))
+
+fig, ax = plt.subplots()
+ax.plot(maximas, color="red")
+ax.set_title("Temperaturas máximas")
+plt.show()
+'''),
+            "casos": _casos_maximas(),
+        },
+        {
+            "titulo": "Texto que vira data",
+            "enunciado": "Crie a função `converter(texto)` que recebe uma data no formato do CSV ('2025-07-04') e devolve um "
+                         "objeto datetime. Crie também `formatar(data)`, que devolve a data no estilo brasileiro: '04/07/2025'.",
+            "inicial": "from datetime import datetime\n\n\ndef converter(texto):\n    pass\n\n\ndef formatar(data):\n    pass\n",
+            "dica": "datetime.strptime(texto, '%Y-%m-%d') para ler e data.strftime('%d/%m/%Y') para escrever.",
+            "solucao": _c('''
+from datetime import datetime
+
+
+def converter(texto):
+    return datetime.strptime(texto, "%Y-%m-%d")
+
+
+def formatar(data):
+    return data.strftime("%d/%m/%Y")
+'''),
+            "casos": [caso([funcao("converter"), funcao("formatar"),
+                            regra(lambda o, n, c: n["converter"]("2025-07-04").timetuple()[:3] == (2025, 7, 4)
+                                  and type(n["converter"]("2026-01-31")).__name__ == "datetime",
+                                  "converter('2025-07-04') deveria devolver o datetime de 4 de julho de 2025."),
+                            regra(lambda o, n, c: n["formatar"](n["converter"]("2025-07-04")) == "04/07/2025"
+                                  and n["formatar"](n["converter"]("2026-12-25")) == "25/12/2026",
+                                  "formatar(converter('2025-07-04')) deveria devolver '04/07/2025'.")])],
+        },
+        {
+            "titulo": "Estação com defeito",
+            "enunciado": "O arquivo 'clima.csv' tem dias com campos vazios. Leia o arquivo e:\n"
+                         "• para cada dia sem dados, mostre 'Faltando dados para AAAA-MM-DD'\n"
+                         "• guarde as máximas dos dias válidos na lista `maximas`\n"
+                         "• no fim, mostre 'Dias válidos: N'",
+            "inicial": "import csv\nfrom pathlib import Path\n\n# Seu código aqui\n",
+            "dica": "Dentro do for: try: maxima = int(linha[3]) / except ValueError: print(...) / else: maximas.append(maxima).",
+            "solucao": _c('''
+import csv
+from pathlib import Path
+
+reader = csv.reader(Path("clima.csv").read_text().splitlines())
+next(reader)
+maximas = []
+for linha in reader:
+    try:
+        maxima = int(linha[3])
+    except ValueError:
+        print(f"Faltando dados para {linha[1]}")
+    else:
+        maximas.append(maxima)
+
+print(f"Dias válidos: {len(maximas)}")
+'''),
+            "casos": _casos_faltando(),
+        },
+        {
+            "titulo": "Terremotos fortes",
+            "enunciado": "Leia 'terremotos.json' e mostre:\n"
+                         "• 'Total de terremotos: N'\n"
+                         "• 'Fortes (5 ou mais): N'\n"
+                         "• depois, o título (properties → title) de cada terremoto com magnitude 5 ou mais, na ordem do arquivo",
+            "inicial": "import json\nfrom pathlib import Path\n\n# Seu código aqui\n",
+            "dica": "fortes = [t for t in dados['features'] if t['properties']['mag'] >= 5]",
+            "solucao": _c('''
+import json
+from pathlib import Path
+
+dados = json.loads(Path("terremotos.json").read_text())
+terremotos = dados["features"]
+fortes = [t for t in terremotos if t["properties"]["mag"] >= 5]
+
+print(f"Total de terremotos: {len(terremotos)}")
+print(f"Fortes (5 ou mais): {len(fortes)}")
+for t in fortes:
+    print(t["properties"]["title"])
+'''),
+            "casos": _casos_fortes(),
+        },
+        {
+            "titulo": "Mapa dos tremores",
+            "enunciado": "Leia 'terremotos.json', guarde as magnitudes na lista `mags` e faça um scatter com a longitude "
+                         "no eixo x e a latitude no eixo y de cada terremoto (na ordem do arquivo). Use as magnitudes para "
+                         "o tamanho ou a cor dos pontos.",
+            "inicial": "import json\nfrom pathlib import Path\nimport matplotlib.pyplot as plt\n\n# Seu código aqui\n",
+            "dica": "coordinates é [longitude, latitude, profundidade]: lon = [0] e lat = [1].",
+            "solucao": _c('''
+import json
+from pathlib import Path
+import matplotlib.pyplot as plt
+
+dados = json.loads(Path("terremotos.json").read_text())
+mags, lons, lats = [], [], []
+for t in dados["features"]:
+    mags.append(t["properties"]["mag"])
+    lons.append(t["geometry"]["coordinates"][0])
+    lats.append(t["geometry"]["coordinates"][1])
+
+fig, ax = plt.subplots()
+ax.scatter(lons, lats, s=[m**3 for m in mags], c=mags, cmap=plt.cm.Reds)
+ax.set_title("Terremotos")
+plt.show()
+'''),
+            "casos": _casos_mapa(),
+        },
+        {
+            "titulo": "Caça-bugs: o cabeçalho intruso",
+            "enunciado": "Este programa dá ValueError logo na primeira linha lida. Conserte para mostrar 'Maior máxima: N'.",
+            "inicial": _c('''
+import csv
+from pathlib import Path
+
+reader = csv.reader(Path("clima.csv").read_text().splitlines())
+
+maximas = []
+for linha in reader:
+    maximas.append(int(linha[3]))
+
+print(f"Maior máxima: {max(maximas)}")
+''') + "\n",
+            "dica": "A primeira linha do CSV é o cabeçalho. int('TMAX') não dá certo!",
+            "solucao": _c('''
+import csv
+from pathlib import Path
+
+reader = csv.reader(Path("clima.csv").read_text().splitlines())
+next(reader)
+
+maximas = []
+for linha in reader:
+    maximas.append(int(linha[3]))
+
+print(f"Maior máxima: {max(maximas)}")
+'''),
+            "casos": _casos_bug_csv(),
+        },
+    ],
+    "chefe": {
+        "titulo": "O Meteorologista",
+        "enunciado": "Leia 'clima.csv' (com dias faltando!) e:\n"
+                     "1. Monte as listas de datas, máximas e mínimas só com os dias válidos.\n"
+                     "2. Faça um gráfico com a linha das máximas, a linha das mínimas e o espaço entre elas pintado (fill_between).\n"
+                     "3. Mostre exatamente:\n"
+                     "Máxima do período: T em AAAA-MM-DD\n"
+                     "Mínima do período: T em AAAA-MM-DD\n"
+                     "Dias sem dados: N\n\n"
+                     "A máxima do período é a maior TMAX; a mínima é a menor TMIN. Em caso de empate, vale o primeiro dia. "
+                     "Não mostre mais nada na tela. O Verificar testa duas estações.",
+        "inicial": "import csv\nfrom pathlib import Path\nimport matplotlib.pyplot as plt\n\n# Seu código aqui\n",
+        "dica": "Guarde as datas como texto (linha[1]) para imprimir. Para achar o dia da máxima: i = maximas.index(max(maximas)) e datas[i].",
+        "solucao": _c('''
+import csv
+from pathlib import Path
+import matplotlib.pyplot as plt
+
+reader = csv.reader(Path("clima.csv").read_text().splitlines())
+next(reader)
+
+datas, maximas, minimas = [], [], []
+faltando = 0
+for linha in reader:
+    try:
+        maxima = int(linha[3])
+        minima = int(linha[4])
+    except ValueError:
+        faltando += 1
+    else:
+        datas.append(linha[1])
+        maximas.append(maxima)
+        minimas.append(minima)
+
+i_max = maximas.index(max(maximas))
+i_min = minimas.index(min(minimas))
+print(f"Máxima do período: {maximas[i_max]} em {datas[i_max]}")
+print(f"Mínima do período: {minimas[i_min]} em {datas[i_min]}")
+print(f"Dias sem dados: {faltando}")
+
+fig, ax = plt.subplots()
+ax.plot(datas, maximas, color="red")
+ax.plot(datas, minimas, color="blue")
+ax.fill_between(datas, maximas, minimas, facecolor="blue", alpha=0.1)
+ax.set_title("Máximas e mínimas")
+fig.autofmt_xdate()
+plt.show()
+'''),
+        "casos": _casos_meteorologista(),
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# CAPÍTULO 17: Trabalhando com APIs
+# ---------------------------------------------------------------------------
+
+_URL_GH = "https://api.github.com/search/repositories?q=language:python+sort:stars+stars:>10000"
+
+CAP17 = {
+    "num": 17,
+    "titulo": "Dados: APIs da Web",
+    "subtitulo": "requests, respostas em JSON, GitHub e Hacker News",
+    "licoes": [
+        {
+            "titulo": "O que é uma API",
+            "texto": [
+                "Uma **API web** é um endereço (URL) feito para programas, não para pessoas: em vez de uma página, ele devolve "
+                "**dados**, quase sempre em JSON.",
+                "O pacote `requests` faz o pedido: `r = requests.get(url, headers=headers)`. `r.status_code` diz se deu "
+                "certo (**200** é sucesso; **404** é não encontrado).",
+                "## API de treino",
+                "O PyQuest traz um **requests de treino**: ele responde às mesmas URLs do livro (busca de repositórios do "
+                "GitHub e Hacker News), mas com dados **simulados e fixos**, sem usar a internet. Assim todo mundo tem o "
+                "mesmo resultado e a correção funciona. No seu PC, com `pip install requests`, o mesmo código busca dados reais.",
+            ],
+            "exemplo": _c(f'''
+import requests
+
+url = "{_URL_GH}"
+headers = {{"Accept": "application/vnd.github.v3+json"}}
+r = requests.get(url, headers=headers)
+print(f"Status: {{r.status_code}}")
+
+resposta = r.json()
+print("Chaves:", list(resposta.keys()))
+print("Total de repositórios:", resposta["total_count"])
+'''),
+        },
+        {
+            "titulo": "Explorando a resposta",
+            "texto": [
+                "`r.json()` transforma a resposta num dicionário Python. Na busca do GitHub, a chave `items` é uma lista "
+                "de repositórios, e cada um é outro dicionário cheio de informações.",
+                "Antes de usar, **explore**: veja quantas chaves existem e imprima as que interessam, como `name`, "
+                "`owner['login']`, `stargazers_count` e `html_url`.",
+                "APIs reais têm **limite de pedidos** por minuto. Por isso, guarde a resposta numa variável em vez de "
+                "pedir de novo toda hora.",
+            ],
+            "exemplo": _c(f'''
+import requests
+
+r = requests.get("{_URL_GH}")
+repos = r.json()["items"]
+print("Repositórios recebidos:", len(repos))
+
+primeiro = repos[0]
+print("Chaves de um repositório:", len(primeiro))
+
+for repo in repos[:4]:
+    print()
+    print("Nome:", repo["name"])
+    print("Dono:", repo["owner"]["login"])
+    print("Estrelas:", repo["stargazers_count"])
+    print("Link:", repo["html_url"])
+'''),
+        },
+        {
+            "titulo": "Gráfico dos repositórios",
+            "texto": [
+                "Com os dados em listas, o gráfico é rápido. Nomes longos ficam melhores num gráfico de **barras "
+                "horizontais**: `ax.barh(nomes, estrelas)`.",
+                "`ax.invert_yaxis()` coloca o maior no topo.",
+                "O livro usa o Plotly aqui, que deixa passar o mouse sobre as barras e clicar nos links. A lógica de "
+                "montar as listas é a mesma.",
+            ],
+            "exemplo": _c(f'''
+import requests
+import matplotlib.pyplot as plt
+
+repos = requests.get("{_URL_GH}").json()["items"]
+
+nomes, estrelas = [], []
+for repo in repos:
+    nomes.append(repo["name"])
+    estrelas.append(repo["stargazers_count"])
+
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.barh(nomes, estrelas, color="steelblue")
+ax.invert_yaxis()
+ax.set_title("Projetos Python mais estrelados (dados de treino)")
+ax.set_xlabel("Estrelas")
+plt.show()
+'''),
+        },
+        {
+            "titulo": "Hacker News e ordenação",
+            "texto": [
+                "A API do Hacker News funciona em duas etapas: `topstories.json` devolve uma lista de **IDs**, e "
+                "`item/<id>.json` devolve os detalhes de cada notícia.",
+                "Juntando os dicionários numa lista, dá para ordenar por qualquer campo. O livro usa "
+                "`sorted(lista, key=itemgetter('comments'), reverse=True)`. Um `lambda` faz o mesmo: "
+                "`key=lambda d: d['descendants']`.",
+                "Em `descendants` está o número de comentários. Algumas notícias reais não têm essa chave, por isso o "
+                "livro usa `.get('descendants', 0)`.",
+            ],
+            "exemplo": _c('''
+from operator import itemgetter
+import requests
+
+url = "https://hacker-news.firebaseio.com/v0/topstories.json"
+ids = requests.get(url).json()
+
+noticias = []
+for id_noticia in ids[:6]:
+    url = f"https://hacker-news.firebaseio.com/v0/item/{id_noticia}.json"
+    d = requests.get(url).json()
+    noticias.append({"titulo": d["title"], "comentarios": d.get("descendants", 0)})
+
+noticias = sorted(noticias, key=itemgetter("comentarios"), reverse=True)
+for n in noticias:
+    print(f"{n['comentarios']:>4} comentários | {n['titulo']}")
+'''),
+        },
+    ],
+    "quiz": [
+        {"pergunta": "O que uma API web normalmente devolve?",
+         "opcoes": ["Uma página bonita", "Dados (geralmente em JSON) para programas", "Um arquivo .exe", "Imagens apenas"],
+         "correta": 1, "explicacao": "APIs são feitas para programas lerem dados."},
+        {"pergunta": "Qual status_code indica sucesso?",
+         "opcoes": ["404", "500", "200", "301"], "correta": 2, "explicacao": "200 = OK. 404 = não encontrado."},
+        {"pergunta": "O que `r.json()` faz?",
+         "opcoes": ["Salva um arquivo", "Transforma a resposta em dicionários e listas do Python", "Envia dados", "Fecha a conexão"],
+         "correta": 1, "explicacao": "É como um json.loads() da resposta."},
+        {"pergunta": "Na API de busca do GitHub, onde fica a lista de repositórios?",
+         "opcoes": ["resposta['repos']", "resposta['items']", "resposta['total_count']", "resposta[0]"], "correta": 1,
+         "explicacao": "total_count é só o número; a lista está em items."},
+        {"pergunta": "O que é mostrado?",
+         "codigo": "noticias = [{'t': 'a', 'c': 5}, {'t': 'b', 'c': 9}]\nnoticias.sort(key=lambda d: d['c'], reverse=True)\nprint(noticias[0]['t'])",
+         "opcoes": ["a", "b", "5", "9"], "correta": 1,
+         "explicacao": "Ordenando por 'c' do maior para o menor, a notícia 'b' (9) vem primeiro."},
+        {"pergunta": "Por que usar `d.get('descendants', 0)` em vez de `d['descendants']`?",
+         "opcoes": ["É mais rápido", "Para não dar KeyError se a chave não existir", "Para ordenar", "Para converter em texto"],
+         "correta": 1, "explicacao": "get() devolve o valor padrão quando a chave falta."},
+        {"pergunta": "Por que guardar a resposta da API numa variável em vez de pedir de novo?",
+         "opcoes": ["APIs têm limite de pedidos e cada pedido demora", "Porque requests só funciona uma vez",
+                    "Para o JSON virar CSV", "Não faz diferença"], "correta": 0,
+         "explicacao": "Pedir uma vez e reaproveitar é mais rápido e respeita os limites da API."},
+    ],
+    "desafios": [
+        {
+            "titulo": "Primeiro contato",
+            "enunciado": f"Faça um pedido para a URL de busca do GitHub:\n{_URL_GH}\n\n"
+                         "e mostre:\nStatus: 200\nTotal de repositórios: N",
+            "inicial": f'import requests\n\nurl = "{_URL_GH}"\n# Seu código aqui\n',
+            "dica": "r = requests.get(url); r.status_code e r.json()['total_count'].",
+            "solucao": _c(f'''
+import requests
+
+url = "{_URL_GH}"
+r = requests.get(url)
+print(f"Status: {{r.status_code}}")
+print(f"Total de repositórios: {{r.json()['total_count']}}")
+'''),
+            "casos": [caso([regra(lambda o, n, c: normalizar(o) == normalizar(_esperado_status()),
+                                  "A saída não ficou como esperado. Use os valores que vêm da resposta (status_code e total_count).")])],
+        },
+        {
+            "titulo": "Pódio dos repositórios",
+            "enunciado": "Usando a mesma busca, mostre os 3 primeiros repositórios no formato:\n"
+                         "nome (de dono): N estrelas",
+            "inicial": f'import requests\n\nurl = "{_URL_GH}"\n# Seu código aqui\n',
+            "dica": "for repo in r.json()['items'][:3]: print(f\"{repo['name']} (de {repo['owner']['login']}): {repo['stargazers_count']} estrelas\")",
+            "solucao": _c(f'''
+import requests
+
+url = "{_URL_GH}"
+repos = requests.get(url).json()["items"]
+for repo in repos[:3]:
+    print(f"{{repo['name']}} (de {{repo['owner']['login']}}): {{repo['stargazers_count']}} estrelas")
+'''),
+            "casos": [caso([regra(lambda o, n, c: normalizar(o) == normalizar(_esperado_top3()),
+                                  "A saída não bateu. Formato de cada linha: nome (de dono): N estrelas, para os 3 primeiros itens.")])],
+        },
+        {
+            "titulo": "Estrelas no gráfico",
+            "enunciado": "Faça um gráfico de barras HORIZONTAIS (ax.barh) com o nome e as estrelas de TODOS os "
+                         "repositórios da busca do GitHub.",
+            "inicial": f'import requests\nimport matplotlib.pyplot as plt\n\nurl = "{_URL_GH}"\n# Seu código aqui\n',
+            "dica": "Monte as listas nomes e estrelas num for e depois ax.barh(nomes, estrelas).",
+            "solucao": _c(f'''
+import requests
+import matplotlib.pyplot as plt
+
+url = "{_URL_GH}"
+repos = requests.get(url).json()["items"]
+nomes = [repo["name"] for repo in repos]
+estrelas = [repo["stargazers_count"] for repo in repos]
+
+fig, ax = plt.subplots()
+ax.barh(nomes, estrelas)
+ax.set_title("Repositórios mais estrelados")
+plt.show()
+'''),
+            "casos": [caso([tem_grafico(),
+                            regra(lambda o, n, c: _teste_barras_api(n),
+                                  "O gráfico precisa ter uma barra horizontal para cada repositório, com o tamanho igual às estrelas.")])],
+        },
+        {
+            "titulo": "Pedido com cuidado",
+            "enunciado": "Crie a função `buscar(url)` que faz o pedido e devolve r.json() quando o status for 200. "
+                         "Para qualquer outro status, devolve None.",
+            "inicial": "import requests\n\n\ndef buscar(url):\n    pass\n",
+            "dica": "if r.status_code == 200: return r.json() e, fora do if, return None.",
+            "solucao": _c('''
+import requests
+
+
+def buscar(url):
+    r = requests.get(url)
+    if r.status_code == 200:
+        return r.json()
+    return None
+'''),
+            "casos": [caso([funcao("buscar"),
+                            regra(lambda o, n, c: _teste_buscar(n),
+                                  "Teste: buscar('https://hacker-news.firebaseio.com/v0/item/40101.json') deveria devolver o "
+                                  "dicionário da notícia; buscar('https://api.github.com/nao-existe') (status 404) deveria devolver None.")])],
+        },
+        {
+            "titulo": "Mais comentadas",
+            "enunciado": "Pegue os 5 primeiros IDs de https://hacker-news.firebaseio.com/v0/topstories.json, busque cada "
+                         "notícia em https://hacker-news.firebaseio.com/v0/item/<id>.json e mostre as 5 da mais comentada "
+                         "para a menos comentada, no formato:\ntítulo - N comentários\n\n(N está na chave 'descendants'.)",
+            "inicial": "import requests\n\n# Seu código aqui\n",
+            "dica": "Guarde os dicionários numa lista e ordene com sorted(lista, key=lambda d: d['descendants'], reverse=True).",
+            "solucao": _c('''
+import requests
+
+ids = requests.get("https://hacker-news.firebaseio.com/v0/topstories.json").json()
+noticias = []
+for id_noticia in ids[:5]:
+    url = f"https://hacker-news.firebaseio.com/v0/item/{id_noticia}.json"
+    noticias.append(requests.get(url).json())
+
+noticias = sorted(noticias, key=lambda d: d["descendants"], reverse=True)
+for d in noticias:
+    print(f"{d['title']} - {d['descendants']} comentários")
+'''),
+            "casos": [caso([regra(lambda o, n, c: normalizar(o) == normalizar(_esperado_hn()),
+                                  "A saída não bateu. Confira se usou só os 5 primeiros IDs e se ordenou do mais comentado para o menos.")])],
+        },
+        {
+            "titulo": "Caça-bugs: o método esquecido",
+            "enunciado": "Este programa dá TypeError ('method' object is not subscriptable). Conserte para mostrar o total.",
+            "inicial": _c(f'''
+import requests
+
+r = requests.get("{_URL_GH}")
+dados = r.json
+print("Total:", dados["total_count"])
+''') + "\n",
+            "dica": "json é um método. Métodos precisam de parênteses para rodar.",
+            "solucao": _c(f'''
+import requests
+
+r = requests.get("{_URL_GH}")
+dados = r.json()
+print("Total:", dados["total_count"])
+'''),
+            "casos": [caso([regra(lambda o, n, c: normalizar(o) == normalizar(_esperado_status().splitlines()[1].replace("Total de repositórios", "Total")),
+                                  "A saída deveria ser 'Total: N', com o total_count da resposta.")])],
+        },
+    ],
+    "chefe": {
+        "titulo": "O Explorador de APIs",
+        "enunciado": "Crie a função `ranking_linguagem(linguagem)` que busca os repositórios de uma linguagem na URL\n"
+                     "https://api.github.com/search/repositories?q=language:<linguagem>+sort:stars\n\n"
+                     "e devolve uma lista com até 5 tuplas (nome, estrelas), da mais estrelada para a menos estrelada.\n"
+                     "Se a linguagem não tiver repositórios, devolve uma lista vazia.\n\n"
+                     "A API de treino conhece python, javascript e rust.",
+        "inicial": "import requests\n\n\ndef ranking_linguagem(linguagem):\n    pass\n\n\nprint(ranking_linguagem('rust'))\n",
+        "dica": "Monte a URL com f-string, pegue r.json()['items'], crie as tuplas (repo['name'], repo['stargazers_count']), "
+                "ordene por estrelas com reverse=True e corte com [:5].",
+        "solucao": _c('''
+import requests
+
+
+def ranking_linguagem(linguagem):
+    url = f"https://api.github.com/search/repositories?q=language:{linguagem}+sort:stars"
+    repos = requests.get(url).json()["items"]
+    pares = [(repo["name"], repo["stargazers_count"]) for repo in repos]
+    pares.sort(key=lambda par: par[1], reverse=True)
+    return pares[:5]
+
+
+print(ranking_linguagem("rust"))
+'''),
+        "casos": [caso([funcao("ranking_linguagem"),
+                        regra(lambda o, n, c: _teste_ranking(n),
+                              "Teste: para python, javascript e rust, a função deve devolver as 5 tuplas (nome, estrelas) mais "
+                              "estreladas, em ordem decrescente; para 'cobol', devolve [].")])],
+    },
+}
+
+
+CAPITULOS = [CAP1, CAP2, CAP3, CAP4, CAP5, CAP6, CAP7, CAP8, CAP9, CAP10, CAP11, CAP12, CAP13, CAP14,
+             CAP15, CAP16, CAP17]

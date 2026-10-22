@@ -9,14 +9,17 @@
 **PyQuest** transforma o início do aprendizado de Python num jogo. Você lê lições curtas, testa exemplos, responde quizzes e resolve desafios de código, que são corrigidos na hora. Ao final de cada capítulo, enfrenta um chefão para liberar o próximo.
 
 ### O que tem dentro
-- 14 capítulos: primeiros passos, variáveis e strings, listas, laços `for`, `if`, dicionários, `input` e `while`, funções, classes, arquivos e exceções, testes e o projeto **Alien Invasion** (nave, frota de alienígenas, colisões, placar e recorde)
-- 50 lições com exemplos que você executa com um clique
-- 99 perguntas de quiz, com combos e estrelas
-- 77 desafios de código e 14 chefões, com correção automática e mensagens de erro em português
-- XP, 15 níveis, bônus diário, sequência de dias e 14 conquistas
+- 11 capítulos de fundamentos: primeiros passos, variáveis e strings, listas, laços `for`, `if`, dicionários, `input` e `while`, funções, classes, arquivos e exceções, testes
+- Página de **Projetos** com 6 capítulos: **Alien Invasion** (nave, frota, colisões, placar e recorde) e **Visualização de Dados** (gráficos com matplotlib, CSV, JSON e APIs)
+- **Mural ao vivo** em cada projeto (no site), para tirar dúvidas com outros alunos
+- 62 lições com exemplos que você executa com um clique
+- 120 perguntas de quiz, com combos e estrelas
+- 96 desafios de código e 17 chefões, com correção automática e mensagens de erro em português
+- XP, 17 níveis, bônus diário, sequência de dias e 14 conquistas
 - Desafio Relâmpago: 60 segundos contra o relógio
 - Laboratório livre para experimentar sem valer nota
 - Nos capítulos do Alien Invasion, um "pygame de treino" embutido (Rect, Sprite, Group, eventos), sem janela: você treina a lógica do jogo direto no navegador
+- Gráficos de verdade com matplotlib, e um "requests de treino" com respostas simuladas das APIs do GitHub e do Hacker News
 
 ### Duas versões
 | | Onde fica | Como usar |
@@ -31,11 +34,13 @@
 **PyQuest** turns your first steps in Python into a game. Read short lessons, run examples, answer quizzes and solve coding challenges that are graded instantly. At the end of each chapter, defeat a boss to unlock the next one.
 
 ### What's inside
-- 14 chapters: getting started, variables and strings, lists, `for` loops, `if`, dictionaries, `input` and `while`, functions, classes, files and exceptions, testing, and the **Alien Invasion** project (ship, alien fleet, collisions, scoring and high score)
-- 50 lessons with one-click runnable examples
-- 99 quiz questions with combos and star ratings
-- 77 coding challenges plus 14 boss fights, auto-graded with beginner-friendly error messages
-- XP, 15 levels, daily bonus, streaks and 14 achievements
+- 11 core chapters: getting started, variables and strings, lists, `for` loops, `if`, dictionaries, `input` and `while`, functions, classes, files and exceptions, testing
+- A **Projects** page with 6 chapters: **Alien Invasion** (ship, alien fleet, collisions, scoring and high score) and **Data Visualization** (matplotlib charts, CSV, JSON and web APIs)
+- A **live discussion board** for each project (website only)
+- 62 lessons with one-click runnable examples
+- 120 quiz questions with combos and star ratings
+- 96 coding challenges plus 17 boss fights, auto-graded with beginner-friendly error messages
+- XP, 17 levels, daily bonus, streaks and 14 achievements
 - Lightning Challenge: 60 seconds against the clock
 - Free-play Lab to experiment without pressure
 

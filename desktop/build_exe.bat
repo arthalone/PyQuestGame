@@ -13,11 +13,11 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
-echo Instalando PyInstaller...
-python -m pip install --upgrade pyinstaller
+echo Instalando PyInstaller e matplotlib (graficos)...
+python -m pip install --upgrade pyinstaller matplotlib
 echo.
-echo Gerando PyQuest.exe (pode levar 1-2 minutos)...
-python -m PyInstaller --noconfirm --clean --onefile --windowed --name PyQuest --hidden-import this pyquest.py
+echo Gerando PyQuest.exe (pode levar 2-4 minutos)...
+python -m PyInstaller --noconfirm --clean --onefile --windowed --name PyQuest --hidden-import this --hidden-import matplotlib.backends.backend_agg --collect-data matplotlib pyquest.py
 echo.
 if exist "dist\PyQuest.exe" (
     copy /Y "dist\PyQuest.exe" "PyQuest.exe" >nul

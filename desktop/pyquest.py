@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 PyQuest: aprenda Python jogando.
-Baseado na sequência dos capítulos 1 a 14 do livro "Curso Intensivo de Python" (Eric Matthes).
+Baseado na sequência dos capítulos 1 a 17 do livro "Curso Intensivo de Python" (Eric Matthes).
 
 Execute com:  python pyquest.py
 """
@@ -13,11 +13,28 @@ import random
 import re
 import sys
 import tkinter as tk
+import webbrowser
 from tkinter import font as tkfont
 from tkinter import messagebox
 
 import motor
 from conteudo import CAPITULOS
+
+SITE = "https://arthalone.github.io/PyQuestGame/"
+ULTIMO_FUNDAMENTO = 11
+PROJETOS = [
+    {"id": "alien", "titulo": "Alien Invasion", "icone": "🚀", "caps": [12, 13, 14],
+     "desc": "Monte um jogo de nave: movimento, tiros, frota de alienígenas, colisões, placar e recorde."},
+    {"id": "dados", "titulo": "Visualização de Dados", "icone": "📊", "caps": [15, 16, 17],
+     "desc": "Transforme números em gráficos: matplotlib, passeio aleatório, clima em CSV, terremotos em JSON e APIs da web."},
+]
+
+
+def projeto_do_cap(n):
+    for pj in PROJETOS:
+        if n in pj["caps"]:
+            return pj
+    return None
 
 VERSAO = "1.0"
 
@@ -47,7 +64,8 @@ NIVEIS = [
     (450, "Aprendiz de Código"), (700, "Domador de Strings"), (1000, "Mestre das Listas"),
     (1300, "Cavaleiro do For"), (1650, "Guardião do If"), (2000, "Senhor dos Dicionários"),
     (2400, "Domador de Laços"), (2850, "Arquiteto de Funções"), (3350, "Mestre das Classes"),
-    (3900, "Pythonista"), (4400, "Piloto Estelar"), (4850, "Lenda do Terminal"),
+    (3900, "Pythonista"), (4400, "Piloto Estelar"), (4900, "Analista de Dados"),
+    (5500, "Mestre dos Projetos"), (6000, "Lenda do Terminal"),
 ]
 
 XP_LICAO = 10
@@ -365,6 +383,29 @@ class Saida(tk.Frame):
         self.t.configure(state="disabled")
         self.t.see("end")
 
+    def graficos(self, ns):
+        """Mostra os gráficos do matplotlib (PNG em base64) dentro da saída."""
+        imgs = (ns or {}).get("__imagens__") or []
+        if not imgs:
+            return
+        self._imgs = []
+        self.t.configure(state="normal", height=max(int(self.t.cget("height")), 24))
+        for b64 in imgs:
+            try:
+                foto = tk.PhotoImage(data=b64)
+            except tk.TclError:
+                self.t.insert("end", "(não consegui mostrar o gráfico)\n", "info")
+                continue
+            fator = max(1, -(-foto.width() // 500))
+            if fator > 1:
+                foto = foto.subsample(fator, fator)
+            self._imgs.append(foto)
+            self.t.insert("end", "\n")
+            self.t.image_create("end", image=foto, padx=4, pady=4)
+            self.t.insert("end", "\n")
+        self.t.configure(state="disabled")
+        self.t.see("end")
+
 
 # ---------------------------------------------------------------------------
 # Aplicativo
@@ -540,7 +581,12 @@ class App(tk.Tk):
         return sum(self.p.feito(i) for i in ids) / len(ids)
 
     def cap_liberado(self, n):
-        return n == 1 or self.p.feito(f"c{n - 1}-chefe")
+        if n == 1:
+            return True
+        pj = projeto_do_cap(n)
+        if pj and pj["caps"][0] == n:
+            return self.p.feito(f"c{ULTIMO_FUNDAMENTO}-chefe")
+        return self.p.feito(f"c{n - 1}-chefe")
 
     def chefe_liberado(self, n):
         c = self.cap(n)
@@ -551,7 +597,7 @@ class App(tk.Tk):
         for c in CAPITULOS:
             n = c["num"]
             if not self.cap_liberado(n):
-                break
+                continue
             for i, l in enumerate(c["licoes"]):
                 if not self.p.feito(f"c{n}-l{i}"):
                     return f"Cap. {n} · Lição: {l['titulo']}", lambda n=n, i=i: self.ir(self.tela_licao, n, i)
@@ -598,7 +644,8 @@ class App(tk.Tk):
 
         nav = tk.Frame(sb, bg=C["painel"], pady=16)
         nav.pack(fill="x")
-        for texto, tela in (("☰   Mapa da Jornada", self.tela_mapa), ("⚡   Desafio Relâmpago", self.tela_relampago),
+        for texto, tela in (("☰   Mapa da Jornada", self.tela_mapa), ("◆   Projetos", self.tela_projetos),
+                            ("⚡   Desafio Relâmpago", self.tela_relampago),
                             ("✎   Laboratório", self.tela_lab), ("★   Conquistas", self.tela_conquistas)):
             b = tk.Label(nav, text=texto, font=self.F["n"], fg=C["texto"], bg=C["painel"], anchor="w",
                          padx=26, pady=10, cursor="hand2")
@@ -609,7 +656,7 @@ class App(tk.Tk):
 
         rod = tk.Frame(sb, bg=C["painel"], padx=20, pady=16)
         rod.pack(side="bottom", fill="x")
-        self.lbl(rod, "Baseado nos capítulos 1–14 do livro Curso Intensivo de Python (Eric Matthes)", "p", C["mudo"],
+        self.lbl(rod, "Baseado nos capítulos 1–17 do livro Curso Intensivo de Python (Eric Matthes)", "p", C["mudo"],
                  wrap=220).pack(anchor="w")
 
     # ---------------- tela: mapa ----------------
@@ -644,11 +691,71 @@ class App(tk.Tk):
             self.lbl(cont, "Você completou a jornada! Use o Relâmpago e o Laboratório para continuar treinando.",
                      "h3", C["verde"], wrap=760).pack(anchor="w")
 
-        partes = {1: "PARTE I · FUNDAMENTOS", 12: "PARTE II · PROJETO ALIEN INVASION"}
+        self.lbl(f, "PARTE I · FUNDAMENTOS", "mini", C["roxo"]).pack(anchor="w", pady=(14, 2))
         for c in CAPITULOS:
-            if c["num"] in partes:
-                self.lbl(f, partes[c["num"]], "mini", C["roxo"]).pack(anchor="w", pady=(14, 2))
-            self._card_cap(f, c)
+            if c["num"] <= ULTIMO_FUNDAMENTO:
+                self._card_cap(f, c)
+        self.lbl(f, "PARTE II · PROJETOS", "mini", C["roxo"]).pack(anchor="w", pady=(18, 2))
+        lib = self.p.feito(f"c{ULTIMO_FUNDAMENTO}-chefe")
+        pc = tk.Frame(f, bg=C["painel"], padx=20, pady=16)
+        pc.pack(fill="x", pady=6)
+        esq = tk.Frame(pc, bg=C["painel"])
+        esq.pack(side="left", fill="x", expand=True)
+        self.lbl(esq, "   ·   ".join(p["icone"] + " " + p["titulo"] for p in PROJETOS), "h3",
+                 C["texto"] if lib else C["mudo"]).pack(anchor="w")
+        self.lbl(esq, "Projetos completos do livro." if lib else
+                 f"⛔ Liberados ao derrotar o chefão do capítulo {ULTIMO_FUNDAMENTO}.", "p", C["mudo"]).pack(anchor="w")
+        self.botao(pc, "Ver projetos  →", lambda: self.ir(self.tela_projetos)).pack(side="right")
+
+    # ---------------- tela: projetos ----------------
+    def tela_projetos(self):
+        r = Rolavel(self.main, C["bg"])
+        r.pack(fill="both", expand=True)
+        f = tk.Frame(r.interno, bg=C["bg"], padx=36, pady=28)
+        f.pack(fill="both", expand=True)
+        self.lbl(f, "Projetos", "h1").pack(anchor="w")
+        self.lbl(f, "Na Parte II do livro, você junta tudo o que aprendeu em projetos completos.", "n", C["mudo"],
+                 wrap=760).pack(anchor="w", pady=(4, 14))
+        if not self.p.feito(f"c{ULTIMO_FUNDAMENTO}-chefe"):
+            self.lbl(f, f"⛔ Os projetos abrem quando você derrotar o chefão do capítulo {ULTIMO_FUNDAMENTO}.", "n",
+                     C["amarelo"], wrap=760).pack(anchor="w", pady=(0, 12))
+        for pj in PROJETOS:
+            ids = [i for n in pj["caps"] for i in self.ids_cap(n)]
+            frac = sum(self.p.feito(i) for i in ids) / len(ids)
+            card = tk.Frame(f, bg=C["painel"], padx=20, pady=16)
+            card.pack(fill="x", pady=6)
+            tk.Label(card, text=pj["icone"], font=self.F["h1"], bg=C["painel"], fg=C["texto"]).pack(side="left", padx=(0, 16))
+            meio = tk.Frame(card, bg=C["painel"])
+            meio.pack(side="left", fill="x", expand=True)
+            self.lbl(meio, pj["titulo"], "h2").pack(anchor="w")
+            self.lbl(meio, pj["desc"], "p", C["mudo"], wrap=560).pack(anchor="w")
+            lin = tk.Frame(meio, bg=C["painel"])
+            lin.pack(anchor="w", pady=(8, 0))
+            barra(lin, frac, 260, 8, C["roxo"]).pack(side="left")
+            self.lbl(lin, f"   {int(frac * 100)}% · capítulos {pj['caps'][0]} a {pj['caps'][-1]}", "p", C["mudo"]).pack(side="left")
+            self.botao(card, "Abrir", lambda pj=pj: self.ir(self.tela_projeto, pj["id"])).pack(side="right")
+
+    def tela_projeto(self, pid):
+        pj = next(p for p in PROJETOS if p["id"] == pid)
+        r = Rolavel(self.main, C["bg"])
+        r.pack(fill="both", expand=True)
+        f = tk.Frame(r.interno, bg=C["bg"], padx=36, pady=24)
+        f.pack(fill="both", expand=True)
+        self.voltar(f, "Projetos", lambda: self.ir(self.tela_projetos)).pack(anchor="w")
+        self.lbl(f, "PROJETO", "mini", C["roxo"]).pack(anchor="w", pady=(16, 0))
+        self.lbl(f, f"{pj['icone']}  {pj['titulo']}", "h1").pack(anchor="w")
+        self.lbl(f, pj["desc"], "n", C["mudo"], wrap=760).pack(anchor="w", pady=(4, 14))
+        for n in pj["caps"]:
+            self._card_cap(f, self.cap(n))
+        mural = tk.Frame(f, bg=C["painel2"], padx=20, pady=14)
+        mural.pack(fill="x", pady=(16, 0))
+        esq = tk.Frame(mural, bg=C["painel2"])
+        esq.pack(side="left", fill="x", expand=True)
+        self.lbl(esq, "💬 Mural do projeto", "h3").pack(anchor="w")
+        self.lbl(esq, "Tire dúvidas e troque ideias com outros alunos no mural ao vivo do PyQuest Online.", "p",
+                 C["mudo"], wrap=520).pack(anchor="w")
+        self.botao(mural, "Abrir no navegador  ↗", lambda: webbrowser.open(f"{SITE}#/projeto/{pid}"),
+                   cor=C["ciano"]).pack(side="right")
 
     def _card_cap(self, master, c):
         n = c["num"]
@@ -670,7 +777,10 @@ class App(tk.Tk):
         lin = tk.Frame(meio, bg=C["painel"])
         lin.pack(anchor="w", pady=(8, 0))
         barra(lin, frac, 260, 8, C["verde"] if completo else C["roxo"]).pack(side="left")
-        estado = "★ Concluído" if completo else (f"{int(frac * 100)}%" if lib else "⛔ Derrote o chefão anterior")
+        pj = projeto_do_cap(n)
+        trava = (f"⛔ Derrote o chefão do cap. {ULTIMO_FUNDAMENTO}" if pj and pj["caps"][0] == n
+                 else "⛔ Derrote o chefão anterior")
+        estado = "★ Concluído" if completo else (f"{int(frac * 100)}%" if lib else trava)
         self.lbl(lin, "   " + estado, "p", C["verde"] if completo else C["mudo"]).pack(side="left")
         if lib:
             self.botao(corpo, "Entrar", lambda: self.ir(self.tela_capitulo, n),
@@ -684,7 +794,11 @@ class App(tk.Tk):
         r.pack(fill="both", expand=True)
         f = tk.Frame(r.interno, bg=C["bg"], padx=36, pady=24)
         f.pack(fill="both", expand=True)
-        self.voltar(f, "Mapa", lambda: self.ir(self.tela_mapa)).pack(anchor="w")
+        pj = projeto_do_cap(n)
+        if pj:
+            self.voltar(f, f"Projeto {pj['titulo']}", lambda: self.ir(self.tela_projeto, pj["id"])).pack(anchor="w")
+        else:
+            self.voltar(f, "Mapa", lambda: self.ir(self.tela_mapa)).pack(anchor="w")
         self.lbl(f, f"CAPÍTULO {n}", "mini", C["roxo"]).pack(anchor="w", pady=(16, 0))
         self.lbl(f, c["titulo"], "h1").pack(anchor="w")
         self.lbl(f, c["subtitulo"], "n", C["mudo"]).pack(anchor="w")
@@ -799,6 +913,8 @@ class App(tk.Tk):
             out.escrever(s)
             if e:
                 out.escrever(motor.descrever_erro(e) + "\n", "erro")
+            else:
+                out.graficos(ns)
             out.pack(fill="x", pady=(8, 0))
             self.p.d["execucoes"] += 1
             self.conquistar("ola_mundo")
@@ -1056,10 +1172,12 @@ class App(tk.Tk):
                 out.escrever(s)
             if err:
                 out.escrever(("\n" if s and not s.endswith("\n") else "") + motor.descrever_erro(err) + "\n", "erro")
-            elif not s:
+            elif not s and not ns.get("__imagens__"):
                 out.escrever("(o programa rodou, mas não mostrou nada)\n", "info")
             else:
                 self.conquistar("ola_mundo")
+            if not err:
+                out.graficos(ns)
             return "break"
 
         def verificar():
@@ -1088,7 +1206,9 @@ class App(tk.Tk):
                     self.conquistar("persistente")
                 self.p.marcar(did)
                 self.ganhar_xp(ganho, "Chefão derrotado!" if chefe else "Desafio concluído")
-                if chefe and n < len(CAPITULOS):
+                if chefe and n == ULTIMO_FUNDAMENTO:
+                    self.toast("Projetos desbloqueados! Veja o menu Projetos.", C["verde"])
+                elif chefe and n < len(CAPITULOS) and projeto_do_cap(n) is projeto_do_cap(n + 1):
                     self.toast(f"Capítulo {n + 1} desbloqueado: {self.cap(n + 1)['titulo']}", C["verde"])
             vitoria()
 
@@ -1102,8 +1222,13 @@ class App(tk.Tk):
             bt.pack()
             self.botao(bt, "Continuar no editor", win.destroy, cor=C["painel2"], fg=C["texto"]).pack(side="left", padx=4)
             if chefe:
-                if n < len(CAPITULOS):
+                pj = projeto_do_cap(n)
+                if n == ULTIMO_FUNDAMENTO:
+                    self.botao(bt, "Ver os projetos  →", lambda: self.ir(self.tela_projetos)).pack(side="left", padx=4)
+                elif pj and n + 1 in pj["caps"] or (not pj and n < len(CAPITULOS)):
                     self.botao(bt, f"Ir para o Capítulo {n + 1}  →", lambda: self.ir(self.tela_capitulo, n + 1)).pack(side="left", padx=4)
+                elif pj:
+                    self.botao(bt, "Projeto concluído!  →", lambda: self.ir(self.tela_projeto, pj["id"])).pack(side="left", padx=4)
                 else:
                     self.botao(bt, "Ver conquistas  →", lambda: self.ir(self.tela_conquistas)).pack(side="left", padx=4)
             elif i + 1 < len(c["desafios"]):
@@ -1295,11 +1420,13 @@ class App(tk.Tk):
                 out.escrever(("\n" if s and not s.endswith("\n") else "") + motor.descrever_erro(err) + "\n", "erro")
             else:
                 vs = motor.variaveis_usuario(ns)
-                vs = {k: v for k, v in vs.items() if not callable(v) and not hasattr(v, "__file__")}
+                vs = {k: v for k, v in vs.items() if not callable(v) and not hasattr(v, "__file__")
+                      and not type(v).__module__.startswith("matplotlib")}
                 if vs:
                     out.escrever("\n── variáveis ──\n", "info")
                     for k, v in list(vs.items())[:15]:
                         out.escrever(f"{k} = {v!r}"[:200] + "\n", "info")
+                out.graficos(ns)
                 self.conquistar("ola_mundo")
             self.p.d["lab_execucoes"] += 1
             self.p.d["execucoes"] += 1

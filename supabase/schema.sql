@@ -166,7 +166,44 @@ insert into public.itens (id, xp, tipo) values
   ('c14-d3', 30, 'desafio'),
   ('c14-d4', 30, 'desafio'),
   ('c14-d5', 30, 'desafio'),
-  ('c14-chefe', 100, 'chefe')
+  ('c14-chefe', 100, 'chefe'),
+  ('c15-l0', 10, 'licao'),
+  ('c15-l1', 10, 'licao'),
+  ('c15-l2', 10, 'licao'),
+  ('c15-l3', 10, 'licao'),
+  ('c15-quiz', 50, 'quiz'),
+  ('c15-d0', 30, 'desafio'),
+  ('c15-d1', 30, 'desafio'),
+  ('c15-d2', 30, 'desafio'),
+  ('c15-d3', 30, 'desafio'),
+  ('c15-d4', 30, 'desafio'),
+  ('c15-d5', 30, 'desafio'),
+  ('c15-chefe', 100, 'chefe'),
+  ('c16-l0', 10, 'licao'),
+  ('c16-l1', 10, 'licao'),
+  ('c16-l2', 10, 'licao'),
+  ('c16-l3', 10, 'licao'),
+  ('c16-quiz', 50, 'quiz'),
+  ('c16-d0', 30, 'desafio'),
+  ('c16-d1', 30, 'desafio'),
+  ('c16-d2', 30, 'desafio'),
+  ('c16-d3', 30, 'desafio'),
+  ('c16-d4', 30, 'desafio'),
+  ('c16-d5', 30, 'desafio'),
+  ('c16-d6', 30, 'desafio'),
+  ('c16-chefe', 100, 'chefe'),
+  ('c17-l0', 10, 'licao'),
+  ('c17-l1', 10, 'licao'),
+  ('c17-l2', 10, 'licao'),
+  ('c17-l3', 10, 'licao'),
+  ('c17-quiz', 50, 'quiz'),
+  ('c17-d0', 30, 'desafio'),
+  ('c17-d1', 30, 'desafio'),
+  ('c17-d2', 30, 'desafio'),
+  ('c17-d3', 30, 'desafio'),
+  ('c17-d4', 30, 'desafio'),
+  ('c17-d5', 30, 'desafio'),
+  ('c17-chefe', 100, 'chefe')
 on conflict (id) do update set xp = excluded.xp, tipo = excluded.tipo;
 
 -- ---------- Perfis públicos (apelido aparece no ranking) ----------
@@ -373,3 +410,102 @@ $$;
 
 grant execute on function public.ranking(text, int) to anon, authenticated;
 grant execute on function public.ranking_relampago(int) to anon, authenticated;
+
+-- =====================================================================
+-- Mural de discussão dos projetos (mensagens ao vivo)
+-- =====================================================================
+create table if not exists public.mensagens (
+  id        bigint generated always as identity primary key,
+  projeto   text not null check (projeto in ('alien', 'dados', 'web')),
+  user_id   uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  apelido   text not null default '',
+  texto     text not null check (char_length(texto) between 1 and 600),
+  denuncias int  not null default 0,
+  oculta    boolean not null default false,
+  criado_em timestamptz not null default now()
+);
+create index if not exists mensagens_projeto_idx on public.mensagens (projeto, id desc);
+
+create table if not exists public.admins (
+  user_id uuid primary key references auth.users(id) on delete cascade
+);
+
+create table if not exists public.denuncias (
+  mensagem_id bigint not null references public.mensagens(id) on delete cascade,
+  user_id     uuid   not null references auth.users(id) on delete cascade,
+  criado_em   timestamptz not null default now(),
+  primary key (mensagem_id, user_id)
+);
+
+-- Quem é administrador do mural (dono do site). Pode apagar qualquer mensagem.
+insert into public.admins (user_id)
+  select id from auth.users where email = 'arthalone@gmail.com'
+on conflict do nothing;
+
+create or replace function public.sou_admin()
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.admins where user_id = auth.uid());
+$$;
+
+-- Antes de gravar: preenche autor, apelido e data no servidor e limita o ritmo de envio.
+create or replace function public.mensagem_antes()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare recentes int;
+begin
+  if auth.uid() is null then
+    raise exception 'Faça login para enviar mensagens.';
+  end if;
+  new.user_id   := auth.uid();
+  new.criado_em := now();
+  new.denuncias := 0;
+  new.oculta    := false;
+  new.texto     := btrim(new.texto);
+  select apelido into new.apelido from public.perfis where id = auth.uid();
+  new.apelido := coalesce(new.apelido, 'Jogador');
+  select count(*) into recentes from public.mensagens
+    where user_id = auth.uid() and criado_em > now() - interval '1 minute';
+  if recentes >= 5 then
+    raise exception 'Calma! Espere um pouquinho antes de enviar outra mensagem.';
+  end if;
+  return new;
+end $$;
+drop trigger if exists mensagem_antes on public.mensagens;
+create trigger mensagem_antes before insert on public.mensagens
+  for each row execute function public.mensagem_antes();
+
+-- Denúncia: cada pessoa conta uma vez; com 3 denúncias a mensagem some.
+create or replace function public.denunciar(mid bigint)
+returns void language plpgsql security definer set search_path = public as $$
+declare total int;
+begin
+  if auth.uid() is null then
+    raise exception 'Faça login para denunciar.';
+  end if;
+  insert into public.denuncias (mensagem_id, user_id) values (mid, auth.uid()) on conflict do nothing;
+  select count(*) into total from public.denuncias where mensagem_id = mid;
+  update public.mensagens set denuncias = total, oculta = (total >= 3) where id = mid;
+end $$;
+
+alter table public.mensagens enable row level security;
+alter table public.admins    enable row level security;
+alter table public.denuncias enable row level security;
+
+drop policy if exists mensagens_ler on public.mensagens;
+create policy mensagens_ler on public.mensagens for select using (not oculta);
+drop policy if exists mensagens_criar on public.mensagens;
+create policy mensagens_criar on public.mensagens for insert to authenticated with check (user_id = auth.uid());
+drop policy if exists mensagens_apagar on public.mensagens;
+create policy mensagens_apagar on public.mensagens for delete to authenticated
+  using (user_id = auth.uid() or public.sou_admin());
+
+grant execute on function public.sou_admin() to anon, authenticated;
+grant execute on function public.denunciar(bigint) to authenticated;
+
+-- Liga o "ao vivo" (Realtime) para a tabela de mensagens.
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables
+                 where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'mensagens') then
+    alter publication supabase_realtime add table public.mensagens;
+  end if;
+end $$;

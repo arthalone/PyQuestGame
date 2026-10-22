@@ -236,7 +236,46 @@ input.campo { background: var(--editor); border: 1px solid var(--borda); color: 
 @keyframes gira { to { transform: rotate(360deg); } }
 
 /* ---------- celular ---------- */
+/* Gráficos do matplotlib na saída */
+.saida .graficos { display: flex; flex-direction: column; gap: 10px; padding: 0 12px; }
+.saida .graficos:not(:empty) { padding: 0 12px 12px; }
+.saida .graficos img { max-width: 100%; height: auto; border-radius: 8px; background: #fff; }
+
+/* Projetos */
+.projetos-chamada { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; text-decoration: none; color: inherit; border: 1px solid var(--borda); }
+.projetos-chamada:hover { border-color: var(--roxo); }
+.projetos-chamada.trancado h3 { color: var(--mudo); }
+.projeto-card { display: flex; align-items: center; gap: 18px; text-decoration: none; color: inherit; margin-bottom: 12px; border: 1px solid transparent; flex-wrap: wrap; }
+.projeto-card:hover { border-color: var(--roxo); }
+.projeto-card p { margin: 4px 0 10px; }
+.pj-ic { font-size: 40px; width: 56px; text-align: center; }
+.aviso-proj { margin-bottom: 14px; color: var(--amarelo); }
+.projeto-grade { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 400px); gap: 18px; align-items: start; }
+
+/* Mural */
+.mural { background: var(--painel); border-radius: var(--raio); padding: 14px 16px; position: sticky; top: 76px; }
+.mural-cab { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.mural-cab h2 { font-size: 18px; margin: 0 0 8px; }
+.ao-vivo { color: var(--verde); font-size: 12px; font-weight: 700; }
+.mural-lista { max-height: 52vh; min-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 4px 2px 8px; }
+.msg { background: var(--painel2); border-radius: 10px; padding: 8px 10px; }
+.msg.minha { border-left: 3px solid var(--roxo); }
+.msg-cab { display: flex; gap: 8px; align-items: baseline; font-size: 13px; flex-wrap: wrap; }
+.msg-acoes { margin-left: auto; display: flex; gap: 8px; }
+.msg-txt { white-space: pre-wrap; word-break: break-word; font-size: 14px; margin-top: 3px; }
+.msg-txt code { background: var(--escuro); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+.msg-cod { background: var(--escuro); padding: 8px 10px; border-radius: 6px; margin: 6px 0; overflow-x: auto; font-size: 12.5px; white-space: pre; }
+button.link { background: none; border: 0; color: var(--mudo); font-size: 12px; cursor: pointer; padding: 0; text-decoration: underline; }
+button.link:hover { color: var(--texto); }
+.mural-form textarea { width: 100%; box-sizing: border-box; background: var(--escuro); color: var(--texto); border: 1px solid var(--borda); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 14px; resize: vertical; }
+.mural-form .linha { justify-content: space-between; margin-top: 6px; }
+.mural-entrar { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; padding: 8px 0; }
+.mural-regras { font-size: 12px; margin: 10px 0 0; }
+
 @media (max-width: 860px) {
+  .projeto-grade { grid-template-columns: 1fr; }
+  .mural { position: static; }
+  .nav a { padding: 6px 4px !important; }
   .topo { backdrop-filter: none; background: var(--bg); }
   .desafio { grid-template-columns: 1fr; }
   .nav {

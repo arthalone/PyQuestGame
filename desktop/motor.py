@@ -7,8 +7,12 @@ import os
 import shutil
 import sys
 import tempfile
+import warnings
 
 ARQ = "<seu código>"
+os.environ.setdefault("MPLBACKEND", "Agg")  # gráficos viram imagens, sem abrir janelas
+warnings.filterwarnings("ignore", message=".*non-interactive.*")
+warnings.filterwarnings("ignore", message=".*Matplotlib is currently using agg.*")
 MAX_PASSOS = 300_000
 MAX_SAIDA = 50_000
 
@@ -32,6 +36,7 @@ DICAS_ERRO = {
     "EOFError": "O programa pediu mais respostas com input() do que o teste forneceu. Confira a condição de parada do laço.",
     "AssertionError": "Um assert falhou: o valor obtido não era o esperado.",
     "RecursionError": "A função chamou a si mesma vezes demais.",
+    "ModuleNotFoundError": "Módulo não encontrado. Para gráficos, o app precisa do matplotlib (no PC: pip install matplotlib).",
 }
 
 
@@ -351,7 +356,132 @@ for _cls, _nome, _mod in ((_Rect, "Rect", "pygame"), (_Surface, "Surface", "pyga
 _PYGAME = _criar_pygame()
 
 
+# ---------------------------------------------------------------------------
+# "requests de treino": uma API de mentira, com respostas fixas e simuladas,
+# no formato das APIs do GitHub e do Hacker News usadas no livro.
+# Nada sai do computador. Com o requests de verdade, o mesmo código busca dados reais.
+# ---------------------------------------------------------------------------
+
+_DONOS = ["estudio-alfa", "coletivo-py", "lab-aurora", "turma-beta", "dev-ipe", "nuvem-clara",
+          "casa-do-codigo-livre", "grupo-orion", "oficina-kiwi", "time-maracuja", "rede-jabuti", "ninho-dev"]
+_NOMES = {
+    "python": ["cobra-veloz", "pyfacil", "dados-em-foco", "robo-tarefas", "web-rapida", "mini-ia",
+               "gerador-de-graficos", "testes-sem-dor", "cli-amigavel", "planilha-py", "jogo-da-cobrinha", "api-relampago"],
+    "javascript": ["botao-magico", "tela-viva", "react-lite", "anima-js", "formulario-feliz", "mapa-interativo",
+                   "cliente-http", "graficos-web", "editor-online", "mini-loja"],
+    "rust": ["ferrugem-rapida", "servidor-seguro", "motor-2d", "parser-turbo", "cofre-de-dados", "terminal-colorido"],
+}
+_ESTRELAS = {"python": 98000, "javascript": 120000, "rust": 64000}
+
+
+def _repos(ling):
+    nomes = _NOMES.get(ling, [])
+    base = _ESTRELAS.get(ling, 0)
+    itens = []
+    for i, nome in enumerate(nomes):
+        dono = _DONOS[(i * 5 + len(ling)) % len(_DONOS)]
+        estrelas = int(base * (0.83 ** i)) - (i * 137) % 1000
+        itens.append({
+            "id": 1000 + i, "name": nome, "full_name": f"{dono}/{nome}",
+            "owner": {"login": dono}, "stargazers_count": estrelas,
+            "forks_count": estrelas // 7, "language": ling.title() if ling != "javascript" else "JavaScript",
+            "html_url": f"https://github.com/{dono}/{nome}",
+            "description": f"Projeto de exemplo ({nome.replace('-', ' ')})",
+            "created_at": f"20{14 + i % 9}-0{1 + i % 9}-1{i % 9}T12:00:00Z",
+            "updated_at": "2026-10-01T08:30:00Z",
+        })
+    return itens
+
+
+_HN = [
+    (40101, "Como aprendi Python fazendo jogos", 312, 128),
+    (40102, "Mostre seu projeto: um gráfico do clima da minha cidade", 254, 97),
+    (40103, "Por que testes automatizados economizam tempo", 198, 143),
+    (40104, "Um guia gentil para APIs web", 176, 41),
+    (40105, "Pergunte: qual foi seu primeiro programa?", 150, 215),
+    (40106, "Visualizando um passeio aleatório", 133, 18),
+    (40107, "Dicionários em Python, explicados com café", 120, 66),
+    (40108, "O que aprendi lendo código de outras pessoas", 99, 52),
+    (40109, "Mostre seu projeto: placar de jogo salvo em JSON", 87, 9),
+    (40110, "Classes sem medo", 64, 30),
+]
+
+
+class _Resposta:
+    def __init__(self, status, dados, url):
+        import json as _json
+        self.status_code = status
+        self.ok = status < 400
+        self.url = url
+        self._dados = dados
+        self.text = _json.dumps(dados, ensure_ascii=False)
+        self.headers = {"Content-Type": "application/json"}
+
+    def json(self):
+        import copy as _copy
+        return _copy.deepcopy(self._dados)
+
+    def raise_for_status(self):
+        if not self.ok:
+            raise _RequestsHTTPError(f"{self.status_code} Erro para a URL: {self.url}")
+
+    def __repr__(self):
+        return f"<Response [{self.status_code}]>"
+
+
+class _RequestsHTTPError(Exception):
+    pass
+
+
+def _api_get(url, params=None, headers=None, timeout=None, **k):
+    import re as _re
+    from urllib.parse import unquote_plus
+    url = str(url)
+    if params:
+        url += ("&" if "?" in url else "?") + "&".join(f"{a}={b}" for a, b in params.items())
+    u = unquote_plus(url)
+    if u.startswith("https://api.github.com/search/repositories"):
+        m = _re.search(r"language:([A-Za-z+#]+)", u)
+        ling = m.group(1).lower() if m else ""
+        itens = _repos(ling)
+        return _Resposta(200, {"total_count": len(itens) * 1013 if itens else 0,
+                               "incomplete_results": False, "items": itens}, url)
+    if u.rstrip("/") == "https://hacker-news.firebaseio.com/v0/topstories.json":
+        return _Resposta(200, [h[0] for h in _HN], url)
+    m = _re.fullmatch(r"https://hacker-news\.firebaseio\.com/v0/item/(\d+)\.json", u)
+    if m:
+        for i, titulo, pontos, coment in _HN:
+            if i == int(m.group(1)):
+                return _Resposta(200, {"id": i, "type": "story", "by": _DONOS[i % len(_DONOS)], "title": titulo,
+                                       "score": pontos, "descendants": coment,
+                                       "url": f"https://exemplo.com/artigo/{i}"}, url)
+        return _Resposta(200, None, url)
+    return _Resposta(404, {"message": "Not Found"}, url)
+
+
+def _criar_requests():
+    import types
+    rq = types.ModuleType("requests")
+    rq.__doc__ = "requests de treino do PyQuest (respostas simuladas, sem internet)."
+    rq.__file__ = "requests_de_treino"
+    rq.get = _api_get
+    rq.Response = _Resposta
+    rq.HTTPError = _RequestsHTTPError
+    exc = types.ModuleType("requests.exceptions")
+    exc.HTTPError = _RequestsHTTPError
+    rq.exceptions = exc
+    return rq
+
+
+_REQUESTS = _criar_requests()
+_Resposta.__name__ = _Resposta.__qualname__ = "Response"
+_Resposta.__module__ = "requests"
+_RequestsHTTPError.__name__ = _RequestsHTTPError.__qualname__ = "HTTPError"
+
+
 def _instalar_pygame():
+    sys.modules["requests"] = _REQUESTS
+    sys.modules["requests.exceptions"] = _REQUESTS.exceptions
     sys.modules["pygame"] = _PYGAME
     for sub in ("sprite", "event", "display", "image", "draw", "mouse", "time", "font"):
         sys.modules["pygame." + sub] = getattr(_PYGAME, sub)
@@ -442,6 +572,9 @@ def executar(codigo, ctx=None):
 
     sys.modules.pop("this", None)  # para "import this" mostrar o Zen toda vez
     _instalar_pygame()
+    _plt_antes = sys.modules.get("matplotlib.pyplot")
+    if _plt_antes is not None:
+        _plt_antes.close("all")
     passos = [0]
     antigo_out = sys.stdout
     erro = None
@@ -475,12 +608,38 @@ def executar(codigo, ctx=None):
                 pass
     shutil.rmtree(pasta, ignore_errors=True)
     ns["__arquivos_saida__"] = saidas
+    ns["__imagens__"], ns["__figuras__"] = _capturar_graficos()
     ns["__saida_limpa__"] = out.limpa.getvalue()
 
     saida = out.tela.getvalue()
     if len(saida) > MAX_SAIDA:
         saida = saida[:MAX_SAIDA] + "\n... (saída cortada)"
     return saida, ns, erro
+
+
+MAX_GRAFICOS = 4
+
+
+def _capturar_graficos():
+    """Transforma as figuras abertas do matplotlib em PNGs (base64)."""
+    plt = sys.modules.get("matplotlib.pyplot")
+    if plt is None:
+        return [], []
+    import base64
+    imagens, figuras = [], []
+    try:
+        for num in plt.get_fignums()[:MAX_GRAFICOS]:
+            fig = plt.figure(num)
+            figuras.append(fig)
+            largura = max(fig.get_size_inches()[0], 1)
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", dpi=min(100, 1000 / largura), bbox_inches="tight")
+            imagens.append(base64.b64encode(buf.getvalue()).decode("ascii"))
+    except Exception:  # noqa  (um gráfico com problema não derruba a execução)
+        pass
+    finally:
+        plt.close("all")
+    return imagens, figuras
 
 
 def descrever_erro(e):

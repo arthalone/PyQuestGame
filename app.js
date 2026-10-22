@@ -15,7 +15,8 @@
     [450, "Aprendiz de Código"], [700, "Domador de Strings"], [1000, "Mestre das Listas"],
     [1300, "Cavaleiro do For"], [1650, "Guardião do If"], [2000, "Senhor dos Dicionários"],
     [2400, "Domador de Laços"], [2850, "Arquiteto de Funções"], [3350, "Mestre das Classes"],
-    [3900, "Pythonista"], [4400, "Piloto Estelar"], [4850, "Lenda do Terminal"],
+    [3900, "Pythonista"], [4400, "Piloto Estelar"], [4900, "Analista de Dados"],
+    [5500, "Mestre dos Projetos"], [6000, "Lenda do Terminal"],
   ];
   const XP = { licao: 10, quiz: 50, desafio: 30, chefe: 100, bonus: 10, solucao: 5 };
   const APROVACAO = 0.7;
@@ -37,6 +38,14 @@
     ["mil_xp", "Mil Pontos", "Alcance 1000 XP."],
   ];
   const CONQ = Object.fromEntries(CONQUISTAS.map((c) => [c[0], c]));
+  const ULTIMO_FUNDAMENTO = 11;
+  const PROJETOS = [
+    { id: "alien", titulo: "Alien Invasion", icone: "🚀", caps: [12, 13, 14],
+      desc: "Monte um jogo de nave: movimento, tiros, frota de alienígenas, colisões, placar e recorde." },
+    { id: "dados", titulo: "Visualização de Dados", icone: "📊", caps: [15, 16, 17],
+      desc: "Transforme números em gráficos: matplotlib, passeio aleatório, dados de clima em CSV, terremotos em JSON e APIs da web." },
+  ];
+  const projetoDoCap = (n) => PROJETOS.find((p) => p.caps.includes(n));
 
   function nivelDe(xp) {
     let i = 0;
@@ -90,7 +99,7 @@
     return n;
   }
 
-  let sb = null, usuario = null, perfil = null;
+  let sb = null, usuario = null, perfil = null, souAdmin = null;
   if (CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY && window.supabase) {
     try {
       sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {
@@ -166,6 +175,7 @@
     if (!forcar && (novo?.id || null) === (usuario?.id || null)) return;
     const eraConvidado = chaveLS === CHAVE_CONVIDADO ? S : null;
     usuario = novo;
+    souAdmin = null;
     if (usuario) {
       carregar("pyquest_v1_" + usuario.id);
       if (eraConvidado && Object.keys(eraConvidado.feitos).length) mesclarConvidado(eraConvidado);
@@ -253,9 +263,10 @@
   // Python no navegador (Pyodide num Web Worker)
   // =====================================================================
   const Py = {
-    w: null, seq: 0, pend: new Map(), pronto: false, aquecendo: null,
+    w: null, seq: 0, pend: new Map(), pronto: false, aquecendo: null, mpl: false,
+    usaMpl: (codigo) => /\bmatplotlib\b/.test(codigo || ""),
     novo() {
-      this.w = new Worker("worker.js?v=3");
+      this.w = new Worker("worker.js?v=4");
       this.w.onmessage = (e) => {
         const { id, ok, r, erro } = e.data;
         const p = this.pend.get(id);
@@ -278,14 +289,15 @@
       if (!this.w) this.novo();
       return new Promise((res, rej) => {
         const id = ++this.seq;
-        const ms = this.pronto ? 15000 : 120000;
+        const pesado = !this.pronto || (this.usaMpl(args.codigo) && !this.mpl);
+        const ms = pesado ? 120000 : 20000;
         const t = setTimeout(() => {
           this.pend.delete(id);
           const eraPronto = this.pronto;
           this.reiniciar();
           rej(new Error(eraPronto ? "tempo" : "carregar"));
         }, ms);
-        this.pend.set(id, { res, rej, t });
+        this.pend.set(id, { res: (v) => { if (this.usaMpl(args.codigo)) this.mpl = true; res(v); }, rej, t });
         this.w.postMessage({ id, tipo, args });
       });
     },
@@ -297,6 +309,7 @@
       if (this.w) this.w.terminate();
       this.w = null;
       this.pronto = false;
+      this.mpl = false;
       this.aquecendo = null;
       for (const p of this.pend.values()) { clearTimeout(p.t); p.rej(new Error("reiniciado")); }
       this.pend.clear();
@@ -396,10 +409,16 @@
   }
 
   function criarSaida(el) {
-    el.innerHTML = `<div class="saida"><div class="cab mini">Saída</div><pre></pre></div>`;
-    const pre = $("pre", el);
+    el.innerHTML = `<div class="saida"><div class="cab mini">Saída</div><pre></pre><div class="graficos"></div></div>`;
+    const pre = $("pre", el), gr = $(".graficos", el);
     return {
-      limpar() { pre.textContent = ""; },
+      limpar() { pre.textContent = ""; gr.innerHTML = ""; },
+      img(b64) {
+        const im = document.createElement("img");
+        im.src = "data:image/png;base64," + b64;
+        im.alt = "Gráfico gerado pelo seu código";
+        gr.appendChild(im);
+      },
       add(txt, cls) {
         const s = document.createElement("span");
         if (cls) s.className = cls;
@@ -412,13 +431,14 @@
 
   async function rodarCodigo(codigo, ctx, saida, { vars = false } = {}) {
     saida.limpar();
-    if (!Py.pronto) saida.add("Carregando o Python (só demora na primeira vez)…\n", "s-info");
+    avisoCarregando(codigo, saida);
     try {
       const r = await Py.chamar("executar", { codigo, ctx });
       saida.limpar();
       if (r.saida) saida.add(r.saida);
+      (r.imagens || []).forEach((b) => saida.img(b));
       if (r.erro) saida.add((r.saida && !r.saida.endsWith("\n") ? "\n" : "") + r.erro + "\n", "s-erro");
-      else if (!r.saida) saida.add("(o programa rodou, mas não mostrou nada)\n", "s-info");
+      else if (!r.saida && !(r.imagens || []).length) saida.add("(o programa rodou, mas não mostrou nada)\n", "s-info");
       if (!r.erro && vars && Object.keys(r.vars).length) {
         saida.add("\n── variáveis ──\n" + Object.entries(r.vars).map(([k, v]) => `${k} = ${v}`).join("\n") + "\n", "s-info");
       }
@@ -429,6 +449,11 @@
       saida.add(msgErroPy(e) + "\n", "s-erro");
       return null;
     }
+  }
+
+  function avisoCarregando(codigo, saida) {
+    if (!Py.pronto) saida.add("Carregando o Python (só demora na primeira vez)…\n", "s-info");
+    if (Py.usaMpl(codigo) && !Py.mpl) saida.add("Carregando o matplotlib para os gráficos (só na primeira vez, pode levar uns 20 segundos)…\n", "s-info");
   }
 
   function modal(html, { classe = "" } = {}) {
@@ -470,7 +495,12 @@
     return [...c.licoes.map((_, i) => `c${n}-l${i}`), `c${n}-quiz`, ...c.desafios.map((_, i) => `c${n}-d${i}`), `c${n}-chefe`];
   }
   const fracCap = (n) => { const ids = idsCap(n); return ids.filter(feito).length / ids.length; };
-  const capLiberado = (n) => n === 1 || feito(`c${n - 1}-chefe`);
+  function capLiberado(n) {
+    if (n === 1) return true;
+    const pj = projetoDoCap(n);
+    if (pj && pj.caps[0] === n) return feito(`c${ULTIMO_FUNDAMENTO}-chefe`);
+    return feito(`c${n - 1}-chefe`);
+  }
   function chefeLiberado(n) {
     const c = cap(n);
     const d = c.desafios.filter((_, i) => feito(`c${n}-d${i}`)).length;
@@ -479,7 +509,7 @@
   function proximoPasso() {
     for (const c of CAPS) {
       const n = c.num;
-      if (!capLiberado(n)) break;
+      if (!capLiberado(n)) continue;
       for (let i = 0; i < c.licoes.length; i++)
         if (!feito(`c${n}-l${i}`)) return [`Cap. ${n} · Lição: ${c.licoes[i].titulo}`, `#/licao/${n}/${i}`];
       if (!feito(`c${n}-quiz`)) return [`Cap. ${n} · Quiz do capítulo`, `#/quiz/${n}`];
@@ -531,12 +561,14 @@
     const p = hash.slice(2).split("/").filter(Boolean);
     const r = p[0] || "mapa";
     $$("#nav a").forEach((a) => a.classList.toggle("ativo",
-      a.dataset.r === r || (a.dataset.r === "mapa" && ["cap", "licao", "quiz", "desafio"].includes(r))));
+      a.dataset.r === r || (a.dataset.r === "projetos" && r === "projeto") ||
+      (["cap", "licao", "quiz", "desafio"].includes(r) && a.dataset.r === (+p[1] > ULTIMO_FUNDAMENTO ? "projetos" : "mapa"))));
     window.scrollTo(0, 0);
     const telas = {
       mapa: telaMapa, cap: () => telaCapitulo(+p[1]), licao: () => telaLicao(+p[1], +p[2]),
       quiz: () => telaQuiz(+p[1]), desafio: () => telaDesafio(+p[1], p[2]), relampago: telaRelampago,
       lab: telaLab, ranking: () => telaRanking(p[1] || "semana"), perfil: telaPerfil,
+      projetos: telaProjetos, projeto: () => telaProjeto(p[1]),
     };
     try {
       (telas[r] || telaMapa)();
@@ -568,21 +600,167 @@
     html += prox
       ? `<div class="cartao proximo"><div class="espaco"><div class="mini verde">Próximo passo</div><h3>${esc(prox[0])}</h3></div><a class="btn" href="${prox[1]}">Continuar ▶</a></div>`
       : `<div class="cartao proximo"><h3 style="color:var(--verde)">Você completou a jornada! Treine no Relâmpago e no Laboratório.</h3></div>`;
-    html += `<h2 style="margin:6px 0 12px">Mapa da Jornada</h2>`;
-    const PARTES = { 1: "Parte I · Fundamentos", 12: "Parte II · Projeto Alien Invasion" };
-    for (const c of CAPS) {
+    html += `<h2 style="margin:6px 0 12px">Mapa da Jornada</h2><div class="mini roxo" style="margin:18px 0 8px">Parte I · Fundamentos</div>`;
+    html += CAPS.filter((c) => c.num <= ULTIMO_FUNDAMENTO).map(cartaoCap).join("");
+    const projLib = feito(`c${ULTIMO_FUNDAMENTO}-chefe`);
+    html += `<div class="mini roxo" style="margin:22px 0 8px">Parte II · Projetos</div>
+      <a class="cartao projetos-chamada ${projLib ? "" : "trancado"}" href="#/projetos">
+        <div class="espaco"><h3>${PROJETOS.map((p) => p.icone + " " + esc(p.titulo)).join(" &nbsp;·&nbsp; ")}</h3>
+        <p class="mudo">${projLib ? "Projetos completos do livro, com mural para tirar dúvidas com outros alunos." : `🔒 Liberados ao derrotar o chefão do capítulo ${ULTIMO_FUNDAMENTO}. Dá para espiar o mural!`}</p></div>
+        <span class="btn">Ver projetos →</span></a>`;
+    app.innerHTML = html;
+    ligarGoogle(app);
+  }
+
+  function cartaoCap(c) {
+    let html = "";
+    {
       const n = c.num, lib = capLiberado(n), ok = feito(`c${n}-chefe`), f = fracCap(n);
-      if (PARTES[n]) html += `<div class="mini roxo" style="margin:18px 0 8px">${PARTES[n]}</div>`;
       html += `<div class="capcard ${ok ? "ok" : lib ? "" : "trancado"}"><div class="faixa"></div><div class="corpo">
         <div class="num">${n}</div>
         <div class="info"><h2>${esc(c.titulo)}</h2><div class="mudo">${esc(c.subtitulo)}</div>
           <div class="linha" style="gap:10px"><div class="barra espaco" style="max-width:300px"><i style="width:${f * 100}%"></i></div>
-          <span class="mudo" style="font-size:13px">${ok ? "★ Concluído" : lib ? Math.round(f * 100) + "%" : "🔒 Derrote o chefão anterior"}</span></div></div>
+          <span class="mudo" style="font-size:13px">${ok ? "★ Concluído" : lib ? Math.round(f * 100) + "%" : projetoDoCap(n) && projetoDoCap(n).caps[0] === n ? `🔒 Derrote o chefão do cap. ${ULTIMO_FUNDAMENTO}` : "🔒 Derrote o chefão anterior"}</span></div></div>
         ${lib ? `<a class="btn ${ok ? "neutro" : ""}" href="#/cap/${n}">Entrar</a>` : ""}
       </div></div>`;
     }
+    return html;
+  }
+
+  // =====================================================================
+  // Projetos (Parte II do livro) e mural de discussão ao vivo
+  // =====================================================================
+  function telaProjetos() {
+    let html = `<h1>Projetos</h1><p class="mudo" style="margin:4px 0 16px">Na Parte II do livro, você junta tudo o que aprendeu em projetos completos. Cada projeto tem um mural para trocar ideias e tirar dúvidas com outros alunos.</p>`;
+    if (!feito(`c${ULTIMO_FUNDAMENTO}-chefe`))
+      html += `<div class="cartao aviso-proj">🔒 Os capítulos dos projetos abrem quando você derrotar o chefão do capítulo ${ULTIMO_FUNDAMENTO}. Os murais já podem ser lidos.</div>`;
+    for (const pj of PROJETOS) {
+      const ids = pj.caps.flatMap(idsCap);
+      const f = ids.filter(feito).length / ids.length;
+      const ok = pj.caps.every((n) => feito(`c${n}-chefe`));
+      html += `<a class="cartao projeto-card" href="#/projeto/${pj.id}"><div class="pj-ic">${pj.icone}</div>
+        <div class="espaco"><h2>${esc(pj.titulo)}</h2><p class="mudo">${esc(pj.desc)}</p>
+        <div class="linha" style="gap:10px"><div class="barra espaco" style="max-width:300px"><i style="width:${f * 100}%"></i></div>
+        <span class="mudo" style="font-size:13px">${ok ? "★ Concluído" : Math.round(f * 100) + "%"} · capítulos ${pj.caps[0]} a ${pj.caps[pj.caps.length - 1]}</span></div></div>
+        <span class="btn">Abrir</span></a>`;
+    }
     app.innerHTML = html;
-    ligarGoogle(app);
+  }
+
+  function telaProjeto(id) {
+    const pj = PROJETOS.find((p) => p.id === id);
+    if (!pj) { location.hash = "#/projetos"; return; }
+    app.innerHTML = `<a class="voltar" href="#/projetos">← Projetos</a><div class="mini roxo">Projeto</div>
+      <h1>${pj.icone} ${esc(pj.titulo)}</h1><p class="mudo" style="margin:4px 0 14px">${esc(pj.desc)}</p>
+      <div class="projeto-grade"><div>${pj.caps.map((n) => cartaoCap(cap(n))).join("")}</div><section class="mural" id="mural"></section></div>`;
+    montarMural(pj, $("#mural"));
+  }
+
+  function quando(iso) {
+    const d = new Date(iso), seg = (Date.now() - d.getTime()) / 1000;
+    if (seg < 60) return "agora";
+    if (seg < 3600) return `há ${Math.floor(seg / 60)} min`;
+    if (seg < 86400) return `há ${Math.floor(seg / 3600)} h`;
+    return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  }
+  function formatarMsg(t) {
+    return String(t).split("```").map((parte, i, arr) => {
+      if (i % 2) return `<pre class="msg-cod">${esc(parte.replace(/^(python|py)?\n/, "").replace(/\n$/, ""))}</pre>`;
+      let txt = parte;
+      if (i > 0) txt = txt.replace(/^\n/, "");
+      if (i < arr.length - 1) txt = txt.replace(/\n$/, "");
+      return esc(txt).replace(/`([^`\n]+)`/g, "<code>$1</code>");
+    }).join("");
+  }
+
+  async function montarMural(pj, el) {
+    el.innerHTML = `<div class="mural-cab"><h2>💬 Mural do projeto</h2><span class="ao-vivo" id="mural-status"></span></div>
+      <div class="mural-lista" id="mural-lista"><p class="mudo">Carregando mensagens…</p></div>
+      <div id="mural-form"></div>
+      <p class="mural-regras mudo">Seja gentil e não compartilhe dados pessoais. Para mostrar código, coloque entre três crases (\`\`\`). Mensagens com 3 denúncias somem. <a href="termos.html#mural">Regras do mural</a></p>`;
+    const lista = $("#mural-lista", el), form = $("#mural-form", el), status = $("#mural-status", el);
+    if (!sb) { lista.innerHTML = `<p class="mudo">O mural precisa de conexão com o servidor, e o site está em modo offline.</p>`; return; }
+    if (usuario && souAdmin === null) {
+      try { const { data } = await sb.rpc("sou_admin"); souAdmin = !!data; } catch { souAdmin = false; }
+    }
+    const msgs = new Map();
+    let vivo = true;
+    aoSair(() => { vivo = false; });
+
+    function render() {
+      if (!vivo) return;
+      const perto = lista.scrollHeight - lista.scrollTop - lista.clientHeight < 80;
+      const arr = [...msgs.values()].sort((a, b) => a.id - b.id);
+      lista.innerHTML = arr.length ? arr.map((m) => {
+        const meu = usuario && m.user_id === usuario.id;
+        return `<div class="msg ${meu ? "minha" : ""}" data-id="${m.id}"><div class="msg-cab"><b>${esc(m.apelido)}</b>
+          <span class="mudo">${quando(m.criado_em)}</span><span class="msg-acoes">
+          ${meu || souAdmin ? `<button class="link" data-a="apagar">apagar</button>` : ""}
+          ${usuario && !meu ? `<button class="link" data-a="denunciar">denunciar</button>` : ""}</span></div>
+          <div class="msg-txt">${formatarMsg(m.texto)}</div></div>`;
+      }).join("") : `<p class="mudo">Nenhuma mensagem ainda. Que tal começar a conversa?</p>`;
+      if (perto) lista.scrollTop = lista.scrollHeight;
+    }
+    async function carregar() {
+      const { data, error } = await sb.from("mensagens").select("id,user_id,apelido,texto,criado_em")
+        .eq("projeto", pj.id).order("id", { ascending: false }).limit(80);
+      if (!vivo) return;
+      if (error) { lista.innerHTML = `<p class="mudo">Não consegui carregar o mural agora. Tente de novo mais tarde.</p>`; return; }
+      msgs.clear();
+      data.forEach((m) => msgs.set(m.id, m));
+      render();
+    }
+    await carregar();
+    lista.scrollTop = lista.scrollHeight;
+
+    const canal = sb.channel("mural-" + pj.id)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "mensagens", filter: `projeto=eq.${pj.id}` },
+        (p) => { msgs.set(p.new.id, p.new); render(); })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "mensagens" },
+        (p) => { if (p.old && msgs.delete(p.old.id)) render(); })
+      .subscribe((st) => { if (vivo) status.textContent = st === "SUBSCRIBED" ? "● ao vivo" : ""; });
+    const timer = setInterval(carregar, 45000);
+    aoSair(() => { clearInterval(timer); sb.removeChannel(canal); });
+
+    lista.addEventListener("click", async (e) => {
+      const a = e.target.dataset.a;
+      if (!a) return;
+      const id = +e.target.closest(".msg").dataset.id;
+      if (a === "apagar") {
+        const { error } = await sb.from("mensagens").delete().eq("id", id);
+        if (error) return toast("Não consegui apagar: " + error.message, "vermelho");
+        msgs.delete(id); render();
+      } else if (a === "denunciar") {
+        const { error } = await sb.rpc("denunciar", { mid: id });
+        if (error) return toast("Não consegui registrar: " + error.message, "vermelho");
+        e.target.remove();
+        toast("Obrigado! A denúncia foi registrada.", "verde");
+      }
+    });
+
+    if (!usuario) {
+      form.innerHTML = `<div class="mural-entrar"><span class="mudo">Entre para participar da conversa.</span>${botaoGoogle("Entrar com Google")}</div>`;
+      ligarGoogle(form);
+      return;
+    }
+    form.innerHTML = `<div class="mural-form"><textarea id="mural-txt" maxlength="600" rows="3" placeholder="Escreva sua dúvida ou dica… (Ctrl+Enter envia)"></textarea>
+      <div class="linha"><span class="mudo" id="mural-cont">0/600</span><button class="btn" id="mural-env">Enviar</button></div></div>`;
+    const txt = $("#mural-txt", form), env = $("#mural-env", form), cont = $("#mural-cont", form);
+    txt.addEventListener("input", () => { cont.textContent = `${txt.value.length}/600`; });
+    async function enviar() {
+      const texto = txt.value.trim();
+      if (!texto) return;
+      env.disabled = true;
+      const { data, error } = await sb.from("mensagens").insert({ projeto: pj.id, texto })
+        .select("id,user_id,apelido,texto,criado_em").single();
+      env.disabled = false;
+      if (error) return toast(error.message.includes("Calma") ? error.message : "Não consegui enviar: " + error.message, "vermelho");
+      txt.value = ""; cont.textContent = "0/600";
+      msgs.set(data.id, data); render();
+      lista.scrollTop = lista.scrollHeight;
+    }
+    env.onclick = enviar;
+    txt.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); enviar(); } });
   }
 
   function linhaItem(id, titulo, xpTxt, botao, href, { ativo = true, chefe = false, obs = "" } = {}) {
@@ -599,7 +777,8 @@
     const c = cap(n);
     if (!c || !capLiberado(n)) { location.hash = "#/"; return; }
     const f = fracCap(n);
-    let html = `<a class="voltar" href="#/">← Mapa</a><div class="mini roxo">Capítulo ${n}</div><h1>${esc(c.titulo)}</h1>
+    const pj = projetoDoCap(n);
+    let html = `${pj ? `<a class="voltar" href="#/projeto/${pj.id}">← Projeto ${esc(pj.titulo)}</a>` : `<a class="voltar" href="#/">← Mapa</a>`}<div class="mini roxo">Capítulo ${n}</div><h1>${esc(c.titulo)}</h1>
       <p class="mudo" style="margin:4px 0 10px">${esc(c.subtitulo)}</p>
       <div class="linha"><div class="barra" style="width:min(360px,60vw)"><i style="width:${f * 100}%"></i></div><span class="mudo">${Math.round(f * 100)}% do capítulo</span></div>`;
     html += `<div class="mini secao">Lições</div>`;
@@ -774,7 +953,7 @@
     async function verificar() {
       ocupado(true);
       saida.limpar();
-      if (!Py.pronto) saida.add("Carregando o Python…\n", "s-info");
+      avisoCarregando(ed.get(), saida);
       let r;
       try { r = await Py.chamar("verificar", { cap: n, idx, codigo: ed.get() }); } catch (e) {
         saida.limpar(); saida.add(msgErroPy(e) + "\n", "s-erro"); ocupado(false); return;
@@ -796,14 +975,21 @@
         if (ajuda === "nenhuma") S.sem_dica++;
         if (tent() >= 3) conquistar("persistente");
         ganho = concluir(id, ajuda, chefe ? "Chefão derrotado!" : "Desafio concluído");
-        if (chefe && n < CAPS.length) toast(`Capítulo ${n + 1} desbloqueado: ${cap(n + 1).titulo}`, "verde");
+        if (chefe && n === ULTIMO_FUNDAMENTO) toast("Projetos desbloqueados! Veja a aba Projetos.", "verde");
+        else if (chefe && cap(n + 1) && capLiberado(n + 1) && projetoDoCap(n) === projetoDoCap(n + 1)) toast(`Capítulo ${n + 1} desbloqueado: ${cap(n + 1).titulo}`, "verde");
         atualizar();
       }
       vitoria(ganho);
     }
     function vitoria(ganho) {
       let prox = "";
-      if (chefe) prox = n < CAPS.length ? `<a class="btn" href="#/cap/${n + 1}">Ir para o Capítulo ${n + 1} →</a>` : `<a class="btn" href="#/ranking">Ver o ranking →</a>`;
+      if (chefe) {
+        const pj = projetoDoCap(n);
+        if (n === ULTIMO_FUNDAMENTO) prox = `<a class="btn" href="#/projetos">Ver os projetos →</a>`;
+        else if (pj && pj.caps.includes(n + 1)) prox = `<a class="btn" href="#/cap/${n + 1}">Ir para o Capítulo ${n + 1} →</a>`;
+        else if (pj) prox = `<a class="btn" href="#/projeto/${pj.id}">Projeto concluído! →</a>`;
+        else prox = `<a class="btn" href="#/cap/${n + 1}">Ir para o Capítulo ${n + 1} →</a>`;
+      }
       else prox = +i + 1 < c.desafios.length ? `<a class="btn" href="#/desafio/${n}/${+i + 1}">Próximo desafio →</a>` : `<a class="btn" href="#/cap/${n}">Voltar ao capítulo →</a>`;
       const m = modal(`<h2>${chefe ? "♛ Chefão derrotado!" : "✔ Desafio concluído!"}</h2>
         ${ganho ? `<p style="color:var(--amarelo);font-weight:700;font-size:18px">+${ganho} XP</p>` : `<p class="mudo">Muito bem!</p>`}
@@ -1035,7 +1221,7 @@
   async function iniciar() {
     carregar(CHAVE_CONVIDADO);
     try {
-      const r = await fetch("conteudo.json?v=3");
+      const r = await fetch("conteudo.json?v=4");
       CAPS = await r.json();
     } catch {
       app.innerHTML = `<p>Não consegui carregar o conteúdo. Recarregue a página.</p>`;

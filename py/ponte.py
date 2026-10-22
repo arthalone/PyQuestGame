@@ -34,7 +34,7 @@ def _desafio(cap, idx):
 def _variaveis(ns):
     out = {}
     for k, v in motor.variaveis_usuario(ns).items():
-        if callable(v) or hasattr(v, "__file__"):
+        if callable(v) or hasattr(v, "__file__") or type(v).__module__.startswith("matplotlib"):
             continue
         out[k] = repr(v)[:200]
         if len(out) >= 15:
@@ -49,6 +49,7 @@ def executar(codigo, ctx_json="{}"):
         "saida": saida,
         "erro": motor.descrever_erro(erro) if erro is not None else None,
         "vars": _variaveis(ns) if erro is None else {},
+        "imagens": ns.get("__imagens__", []),
     }, ensure_ascii=False)
 
 
