@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PyQuest · Aprenda Python jogando</title>
+<meta name="description" content="Aprenda Python do zero resolvendo desafios, derrotando chefões e disputando o ranking. Python de verdade, direto no navegador.">
+<meta property="og:title" content="PyQuest · Aprenda Python jogando">
+<meta property="og:description" content="Lições, quizzes, desafios de código corrigidos na hora, chefões e ranking online.">
+<meta name="theme-color" content="#16171f">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2316171f'/%3E%3Ctext x='32' y='43' font-family='Arial' font-weight='900' font-size='30' text-anchor='middle' fill='%2350fa7b'%3EPy%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topo">
+  <div class="topo-in">
+    <a class="logo" href="#/"><b>Py</b>Quest</a>
+    <nav class="nav" id="nav">
+      <a href="#/" data-r="mapa">Jornada</a>
+      <a href="#/relampago" data-r="relampago">Relâmpago</a>
+      <a href="#/lab" data-r="lab">Laboratório</a>
+      <a href="#/ranking" data-r="ranking">Ranking</a>
+      <a href="#/perfil" data-r="perfil">Perfil</a>
+    </nav>
+    <div class="conta" id="conta"></div>
+  </div>
+</header>
+<main id="app"><span class="carregando">Carregando…</span></main>
+<footer class="rodape">
+  <p>Conteúdo inspirado na sequência dos capítulos 1 a 5 do livro <em>Curso Intensivo de Python</em>, de Eric Matthes.</p>
+  <p>Projeto independente, sem vínculo com o autor ou a editora. O Python roda no seu navegador via Pyodide.</p>
+</footer>
+<div id="toasts"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
