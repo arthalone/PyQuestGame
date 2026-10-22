@@ -13,7 +13,9 @@
   const NIVEIS = [
     [0, "Ovo de Píton"], [100, "Filhote de Cobra"], [250, "Serpente Curiosa"],
     [450, "Aprendiz de Código"], [700, "Domador de Strings"], [1000, "Mestre das Listas"],
-    [1250, "Cavaleiro do For"], [1500, "Guardião do If"], [1800, "Pythonista"], [2200, "Lenda do Terminal"],
+    [1300, "Cavaleiro do For"], [1650, "Guardião do If"], [2000, "Senhor dos Dicionários"],
+    [2400, "Domador de Laços"], [2850, "Arquiteto de Funções"], [3350, "Mestre das Classes"],
+    [3900, "Pythonista"], [4500, "Lenda do Terminal"],
   ];
   const XP = { licao: 10, quiz: 50, desafio: 30, chefe: 100, bonus: 10, solucao: 5 };
   const APROVACAO = 0.7;
@@ -27,7 +29,7 @@
     ["autodidata", "Autodidata", "Resolva 5 desafios sem usar dicas."],
     ["persistente", "Persistente", "Vença um desafio depois de 3 ou mais tentativas."],
     ["cacador", "Caçador de Chefões", "Derrote seu primeiro chefão."],
-    ["lenda", "Lenda da Jornada", "Derrote os 5 chefões."],
+    ["lenda", "Lenda da Jornada", "Derrote todos os chefões."],
     ["streak3", "Constância", "Estude 3 dias seguidos."],
     ["streak7", "Hábito de Ferro", "Estude 7 dias seguidos."],
     ["raio", "Raio Veloz", "Faça 8 ou mais acertos no Desafio Relâmpago."],
@@ -326,6 +328,15 @@
     }
     return out + esc(codigo.slice(i));
   }
+  const pyRepr = (v) => JSON.stringify(v).replace(/"/g, "'");
+  function descreverCtx(ctx) {
+    if (!ctx) return "";
+    const linhas = [];
+    if (ctx.__entradas__) linhas.push("entradas digitadas: " + (ctx.__entradas__.length ? ctx.__entradas__.map(pyRepr).join(", ") : "(nenhuma)"));
+    if (ctx.__arquivos__ && Object.keys(ctx.__arquivos__).length) linhas.push("arquivos na pasta: " + Object.keys(ctx.__arquivos__).join(", "));
+    for (const [k, v] of Object.entries(ctx)) if (!k.startsWith("__")) linhas.push(`${k} = ${pyRepr(v)}`);
+    return linhas.join("\n");
+  }
   const blocoCodigo = (codigo) => `<pre class="codigo">${realcar(codigo)}</pre>`;
 
   function rico(paragrafos) {
@@ -546,7 +557,7 @@
       html += `<section class="hero">
         <h1>Aprenda <b>Python</b> jogando.</h1>
         <p>Lições curtas, desafios de código corrigidos na hora, chefões para derrotar e um ranking para disputar com gente do Brasil inteiro. Tudo grátis, direto no navegador.</p>
-        <div class="feats"><span>17 lições</span><span>25 desafios + 5 chefões</span><span>36 perguntas de quiz</span><span>Ranking semanal</span><span>Python de verdade</span></div>
+        <div class="feats"><span>${CAPS.length} capítulos</span><span>${CAPS.reduce((a, c) => a + c.licoes.length, 0)} lições</span><span>${CAPS.reduce((a, c) => a + c.desafios.length, 0)} desafios + ${CAPS.length} chefões</span><span>${CAPS.reduce((a, c) => a + c.quiz.length, 0)} perguntas de quiz</span><span>Ranking semanal</span><span>Python de verdade</span></div>
         <div class="linha">${prox ? `<a class="btn grande" href="${prox[1]}">Começar agora ▶</a>` : ""}
         ${sb ? botaoGoogle("Entrar para salvar e rankear") : ""}</div>
         ${sb ? `<p class="mudo" style="font-size:13px;margin-top:12px">Dá para jogar sem conta. Ao entrar, seu progresso vai junto.</p>` : ""}
@@ -625,7 +636,7 @@
     Py.aquecer();
     const outEl = $("#out");
     const saida = criarSaida(outEl);
-    $("#b-run").onclick = () => { outEl.hidden = false; rodarCodigo(l.exemplo, {}, saida); };
+    $("#b-run").onclick = () => { outEl.hidden = false; rodarCodigo(l.exemplo, l.ctx || {}, saida); };
     $("#b-lab").onclick = () => { S.codigo.lab = l.exemplo; salvar(); location.hash = "#/lab"; };
     $("#b-ok").onclick = () => {
       concluir(id, "nenhuma", "Lição concluída");
@@ -711,15 +722,15 @@
     const idx = chefe ? "chefe" : +i;
     const id = chefe ? `c${n}-chefe` : `c${n}-d${i}`;
     const base = chefe ? XP.chefe : XP.desafio;
-    const ctxTxt = Object.entries(d.ctx).map(([k, v]) => `${k} = ${JSON.stringify(v).replace(/"/g, "'")}`).join("\n");
+    const ctxTxt = descreverCtx(d.ctx);
 
     app.innerHTML = `<a class="voltar" href="#/cap/${n}">← Capítulo ${n}</a>
       <div class="linha"><div class="espaco"><div class="mini ${chefe ? "laranja" : "roxo"}">${chefe ? "Chefão" : `Desafio ${+i + 1} de ${c.desafios.length}`} · Capítulo ${n}</div>
       <h1>${chefe ? "♛ " : ""}${esc(d.titulo)}</h1></div>${feito(id) ? `<span style="color:var(--verde);font-weight:700">✔ Concluído</span>` : ""}</div>
       <div class="desafio" style="margin-top:16px">
         <div class="cartao"><div class="mini">Missão</div><div class="missao" style="margin-top:6px">${esc(d.enunciado)}</div>
-          ${ctxTxt ? `<div class="mini" style="margin-top:14px">Variáveis fornecidas (no Executar)</div><pre class="codigo" style="margin-top:6px">${esc(ctxTxt)}</pre>
-            <p class="mudo" style="font-size:13px;margin:6px 0 0">O Verificar testa ${d.ncasos} valores diferentes.</p>` : ""}
+          ${ctxTxt ? `<div class="mini" style="margin-top:14px">Dados do teste (usados no Executar)</div><pre class="codigo" style="margin-top:6px;white-space:pre-wrap">${esc(ctxTxt)}</pre>` : ""}
+          ${d.ncasos > 1 ? `<p class="mudo" style="font-size:13px;margin:6px 0 0">O Verificar testa ${d.ncasos} situações diferentes.</p>` : ""}
           <p id="recompensa" style="font-weight:700;margin:14px 0 0"></p><div id="dica"></div></div>
         <div><div class="editor-wrap" id="ed"></div>
           <div class="barra-acoes"><button class="btn ciano" id="b-run">▶ Executar</button><button class="btn" id="b-ver">✔ Verificar</button>
@@ -1022,7 +1033,7 @@
   async function iniciar() {
     carregar(CHAVE_CONVIDADO);
     try {
-      const r = await fetch("conteudo.json?v=1");
+      const r = await fetch("conteudo.json?v=2");
       CAPS = await r.json();
     } catch {
       app.innerHTML = `<p>Não consegui carregar o conteúdo. Recarregue a página.</p>`;

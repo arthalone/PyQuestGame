@@ -1,6 +1,6 @@
 // Web Worker: roda o Python (Pyodide) fora da tela principal.
 const PYODIDE = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/";
-const VERSAO = "1";
+const VERSAO = "2";
 let ponte = null;
 let iniciando = null;
 

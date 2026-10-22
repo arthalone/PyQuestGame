@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 PyQuest: aprenda Python jogando.
-Baseado na sequência dos capítulos 1 a 5 do livro "Curso Intensivo de Python" (Eric Matthes).
+Baseado na sequência dos capítulos 1 a 11 do livro "Curso Intensivo de Python" (Eric Matthes).
 
 Execute com:  python pyquest.py
 """
@@ -45,8 +45,9 @@ def clarear(hexcor, f=0.18):
 NIVEIS = [
     (0, "Ovo de Píton"), (100, "Filhote de Cobra"), (250, "Serpente Curiosa"),
     (450, "Aprendiz de Código"), (700, "Domador de Strings"), (1000, "Mestre das Listas"),
-    (1250, "Cavaleiro do For"), (1500, "Guardião do If"), (1800, "Pythonista"),
-    (2200, "Lenda do Terminal"),
+    (1300, "Cavaleiro do For"), (1650, "Guardião do If"), (2000, "Senhor dos Dicionários"),
+    (2400, "Domador de Laços"), (2850, "Arquiteto de Funções"), (3350, "Mestre das Classes"),
+    (3900, "Pythonista"), (4500, "Lenda do Terminal"),
 ]
 
 XP_LICAO = 10
@@ -67,7 +68,7 @@ CONQUISTAS = [
     ("autodidata", "Autodidata", "Resolva 5 desafios sem usar dicas."),
     ("persistente", "Persistente", "Vença um desafio depois de 3 ou mais tentativas."),
     ("cacador", "Caçador de Chefões", "Derrote seu primeiro chefão."),
-    ("lenda", "Lenda da Jornada", "Derrote os 5 chefões."),
+    ("lenda", "Lenda da Jornada", "Derrote todos os chefões."),
     ("streak3", "Constância", "Estude 3 dias seguidos."),
     ("streak7", "Hábito de Ferro", "Estude 7 dias seguidos."),
     ("raio", "Raio Veloz", "Faça 8 ou mais acertos no Desafio Relâmpago."),
@@ -608,7 +609,7 @@ class App(tk.Tk):
 
         rod = tk.Frame(sb, bg=C["painel"], padx=20, pady=16)
         rod.pack(side="bottom", fill="x")
-        self.lbl(rod, "Baseado nos capítulos 1–5 do livro Curso Intensivo de Python (Eric Matthes)", "p", C["mudo"],
+        self.lbl(rod, "Baseado nos capítulos 1–11 do livro Curso Intensivo de Python (Eric Matthes)", "p", C["mudo"],
                  wrap=220).pack(anchor="w")
 
     # ---------------- tela: mapa ----------------
@@ -791,7 +792,7 @@ class App(tk.Tk):
 
         def rodar():
             out.limpar()
-            s, ns, e = motor.executar(l["exemplo"])
+            s, ns, e = motor.executar(l["exemplo"], l.get("ctx"))
             out.escrever(s)
             if e:
                 out.escrever(motor.descrever_erro(e) + "\n", "erro")
@@ -998,10 +999,11 @@ class App(tk.Tk):
         enun.configure(state="disabled")
         enun.pack(fill="both", expand=True, pady=(6, 8))
         if ctx:
-            self.lbl(esq, "VARIÁVEIS FORNECIDAS (no botão Executar)", "mini", C["mudo"]).pack(anchor="w")
-            self.lbl(esq, "\n".join(f"{k} = {v!r}" for k, v in ctx.items()), "code_p", C["ciano"],
+            self.lbl(esq, "DADOS DO TESTE (usados no Executar)", "mini", C["mudo"]).pack(anchor="w")
+            self.lbl(esq, motor.descrever_contexto(ctx).replace("; ", "\n"), "code_p", C["ciano"],
                      wrap=360).pack(anchor="w", pady=(2, 4))
-            self.lbl(esq, f"O Verificar testa {len(d['casos'])} valores diferentes.", "p", C["mudo"]).pack(anchor="w")
+            if len(d["casos"]) > 1:
+                self.lbl(esq, f"O Verificar testa {len(d['casos'])} situações diferentes.", "p", C["mudo"]).pack(anchor="w")
         recompensa = self.lbl(esq, "", "nb", C["amarelo"])
         recompensa.pack(anchor="w", pady=(10, 0))
         dica_box = tk.Frame(esq, bg=C["painel"])
@@ -1325,7 +1327,7 @@ class App(tk.Tk):
             ("Nível", f"{n}", C["roxo"]),
             ("Lições", str(sum(1 for x in feitos if "-l" in x)), C["ciano"]),
             ("Desafios", str(sum(1 for x in feitos if "-d" in x)), C["verde"]),
-            ("Chefões", f"{sum(1 for x in feitos if x.endswith('-chefe'))}/5", C["laranja"]),
+            ("Chefões", f"{sum(1 for x in feitos if x.endswith('-chefe'))}/{len(CAPITULOS)}", C["laranja"]),
             ("Recorde ⚡", str(self.p.recorde_relampago), C["rosa"]),
             ("Sequência", f"{self.p.streak} d", C["laranja"]),
         ]

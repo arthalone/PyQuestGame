@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Conteúdo do PyQuest: lições, quizzes e desafios dos capítulos 1 a 5,
+Conteúdo do PyQuest: lições, quizzes e desafios dos capítulos 1 a 11,
 seguindo a sequência de temas do livro "Curso Intensivo de Python" (Eric Matthes).
 Os textos e exercícios são originais, criados para este app.
 """
@@ -920,4 +920,1421 @@ CAP5 = {
     },
 }
 
-CAPITULOS = [CAP1, CAP2, CAP3, CAP4, CAP5]
+# ---------------------------------------------------------------------------
+# Ferramentas extras de verificação (capítulos 6 a 11)
+# ---------------------------------------------------------------------------
+
+def _fmt_chamada(nome, args, kwargs):
+    partes = [repr(a) for a in args] + [f"{k}={v!r}" for k, v in (kwargs or {}).items()]
+    return f"{nome}({', '.join(partes)})"
+
+
+def chama(nome, args, esperado, kwargs=None, msg=None):
+    def f(out, ns, code):
+        return callable(ns.get(nome)) and ns[nome](*args, **(kwargs or {})) == esperado
+    return (f, msg or f"{_fmt_chamada(nome, args, kwargs)} deveria devolver {esperado!r}.")
+
+
+def funcao(nome):
+    return (lambda out, ns, code: callable(ns.get(nome)),
+            f"Crie a função `{nome}`.")
+
+
+def classe(nome):
+    return (lambda out, ns, code: isinstance(ns.get(nome), type),
+            f"Crie a classe `{nome}`.")
+
+
+def arquivo_igual(nome, esperado):
+    def f(out, ns, code):
+        conteudo = ns.get("__arquivos_saida__", {}).get(nome)
+        return conteudo is not None and normalizar(conteudo) == normalizar(esperado)
+    return (f, f"O arquivo '{nome}' deveria conter:\n{esperado}")
+
+
+def arquivo_json(nome, esperado):
+    import json
+
+    def f(out, ns, code):
+        conteudo = ns.get("__arquivos_saida__", {}).get(nome)
+        if conteudo is None:
+            return False
+        try:
+            return json.loads(conteudo) == esperado
+        except ValueError:
+            return False
+    return (f, f"O arquivo '{nome}' deveria conter o JSON: {json.dumps(esperado, ensure_ascii=False)}")
+
+
+def entradas(*valores):
+    return {"__entradas__": list(valores)}
+
+
+def _testes_do_aluno(ns):
+    return [v for k, v in ns.items() if k.startswith("test_") and callable(v)]
+
+
+def min_testes(n):
+    return (lambda out, ns, code: len(_testes_do_aluno(ns)) >= n,
+            f"Escreva pelo menos {n} função(ões) de teste com nome começando em test_.")
+
+
+def testes_passam():
+    def f(out, ns, code):
+        for t in _testes_do_aluno(ns):
+            t()
+        return True
+    return (f, "Algum dos seus testes falhou com o código correto. Confira os valores esperados nos asserts.")
+
+
+def testes_pegam(nome, impostor, descricao):
+    """Troca `nome` por uma versão com bug: algum teste do aluno precisa falhar."""
+    def f(out, ns, code):
+        original = ns.get(nome)
+        ns[nome] = impostor
+        try:
+            for t in _testes_do_aluno(ns):
+                try:
+                    t()
+                except Exception:
+                    return True
+            return False
+        finally:
+            ns[nome] = original
+    return (f, f"Seus testes não perceberam um bug: {descricao}. Escreva um teste que pegue esse erro.")
+
+
+# ---------------------------------------------------------------------------
+# CAPÍTULO 6: Dicionários
+# ---------------------------------------------------------------------------
+
+def _rios(rios):
+    out = [f"{r.title()} passa por {p.title()}." for r, p in rios.items()]
+    out.append("Rios: " + ", ".join(r.title() for r in rios))
+    out.append("Países: " + ", ".join(p.title() for p in rios.values()))
+    return "\n".join(out)
+
+
+def _contagem(palavras):
+    c = {}
+    for p in palavras:
+        c[p] = c.get(p, 0) + 1
+    return c
+
+
+def _times(jogadores):
+    soma = {}
+    campeao = jogadores[0]
+    for j in jogadores:
+        soma[j["time"]] = soma.get(j["time"], 0) + j["pontos"]
+        if j["pontos"] > campeao["pontos"]:
+            campeao = j
+    linhas = [f"{t}: {soma[t]}" for t in sorted(soma)]
+    linhas.append(f"Campeão: {campeao['nome'].title()}")
+    return soma, "\n".join(linhas)
+
+
+_JOG1 = [{'nome': 'ana', 'pontos': 120, 'time': 'azul'}, {'nome': 'beto', 'pontos': 80, 'time': 'verde'},
+         {'nome': 'carla', 'pontos': 150, 'time': 'azul'}, {'nome': 'davi', 'pontos': 95, 'time': 'verde'}]
+_JOG2 = [{'nome': 'edu', 'pontos': 40, 'time': 'roxo'}, {'nome': 'fabi', 'pontos': 200, 'time': 'amarelo'},
+         {'nome': 'gil', 'pontos': 70, 'time': 'roxo'}]
+
+CAP6 = {
+    "num": 6,
+    "titulo": "Dicionários",
+    "subtitulo": "Pares chave-valor, laços e aninhamento",
+    "licoes": [
+        {
+            "titulo": "Dicionários: pares chave-valor",
+            "texto": [
+                "Um **dicionário** guarda pares **chave: valor** entre chaves: `alien = {'cor': 'verde', 'pontos': 5}`.",
+                "Para ler um valor, use a chave entre colchetes: `alien['cor']` devolve 'verde'.",
+                "## Mudando o dicionário",
+                "• Adicionar ou mudar um valor: `alien['x'] = 10`.",
+                "• Remover um par: `del alien['pontos']`.",
+                "• Começar vazio e ir preenchendo: `alien = {}`.",
+                "## Chaves que não existem",
+                "`alien['velocidade']` dá `KeyError` se a chave não existir. O método `get()` evita o erro e devolve um valor padrão: "
+                "`alien.get('velocidade', 'sem velocidade')`.",
+            ],
+            "exemplo": "alien = {'cor': 'verde', 'pontos': 5}\nprint(alien['cor'])\nprint(f\"Você ganhou {alien['pontos']} pontos!\")\n\n"
+                       "alien['x'] = 0\nalien['y'] = 25\nalien['cor'] = 'amarelo'\nprint(alien)\n\n"
+                       "del alien['pontos']\nprint(alien.get('pontos', 'Sem pontos definidos.'))",
+        },
+        {
+            "titulo": "Percorrendo dicionários",
+            "texto": [
+                "`for chave, valor in d.items():` percorre todos os pares.",
+                "`for chave in d.keys():` (ou só `for chave in d:`) percorre as chaves, e `d.values()` dá os valores.",
+                "`sorted(d.keys())` percorre as chaves em ordem alfabética.",
+                "`set(d.values())` remove valores repetidos. Um **set** é uma coleção sem repetição: `{'python', 'c'}`.",
+                "`len(d)` diz quantos pares o dicionário tem.",
+                "## Dica: juntando textos",
+                "`', '.join(lista_de_textos)` junta vários textos separados por vírgula: `', '.join(['a', 'b'])` dá 'a, b'.",
+            ],
+            "exemplo": "linguagens = {\n    'ana': 'python',\n    'beto': 'c',\n    'carla': 'rust',\n    'davi': 'python',\n}\n"
+                       "for nome, ling in linguagens.items():\n    print(f\"{nome.title()} gosta de {ling.title()}.\")\n\n"
+                       "for nome in sorted(linguagens.keys()):\n    print(f\"Obrigado por responder, {nome.title()}!\")\n\n"
+                       "citadas = sorted(set(linguagens.values()))\nprint('Linguagens citadas: ' + ', '.join(citadas))",
+        },
+        {
+            "titulo": "Aninhamento",
+            "texto": [
+                "Você pode colocar dicionários dentro de listas, listas dentro de dicionários e até dicionários dentro de dicionários.",
+                "• **Lista de dicionários**: vários aliens, cada um com suas informações.",
+                "• **Lista dentro de dicionário**: uma pizza com várias coberturas: `{'massa': 'fina', 'coberturas': ['queijo', 'tomate']}`.",
+                "• **Dicionário de dicionários**: usuários, cada um com nome, cidade etc.",
+                "Evite aninhar demais: se ficar difícil de ler, provavelmente existe um jeito mais simples (como as classes, no capítulo 9).",
+            ],
+            "exemplo": "aliens = []\nfor numero in range(3):\n    aliens.append({'cor': 'verde', 'pontos': 5})\naliens[0]['cor'] = 'amarelo'\n"
+                       "for alien in aliens:\n    print(alien)\n\n"
+                       "pizza = {'massa': 'fina', 'coberturas': ['queijo', 'tomate']}\nprint(f\"Pizza de massa {pizza['massa']} com:\")\n"
+                       "for c in pizza['coberturas']:\n    print(f\"  - {c}\")\n\n"
+                       "usuarios = {\n    'aeinstein': {'nome': 'albert', 'cidade': 'princeton'},\n    'mcurie': {'nome': 'marie', 'cidade': 'paris'},\n}\n"
+                       "for login, info in usuarios.items():\n    print(f\"{login}: {info['nome'].title()} mora em {info['cidade'].title()}\")",
+        },
+    ],
+    "quiz": [
+        {"pergunta": "O que é mostrado?", "codigo": "alien = {'cor': 'verde', 'pontos': 5}\nprint(alien['pontos'])",
+         "opcoes": ["5", "pontos", "verde", "KeyError"], "correta": 0,
+         "explicacao": "A chave 'pontos' está ligada ao valor 5."},
+        {"pergunta": "O que `d.get('x', 0)` devolve se a chave 'x' não existe?",
+         "opcoes": ["KeyError", "None", "0", "'x'"], "correta": 2,
+         "explicacao": "get() devolve o valor padrão (o segundo argumento) quando a chave não existe."},
+        {"pergunta": "Qual laço percorre chaves e valores ao mesmo tempo?",
+         "opcoes": ["for k in d:", "for k, v in d.items():", "for v in d.values():", "for k, v in d:"], "correta": 1,
+         "explicacao": "items() devolve os pares (chave, valor)."},
+        {"pergunta": "O que acontece?", "codigo": "d = {'a': 1}\nprint(d['b'])",
+         "opcoes": ["Mostra None", "Mostra 0", "KeyError", "IndexError"], "correta": 2,
+         "explicacao": "Acessar uma chave inexistente com colchetes dá KeyError."},
+        {"pergunta": "Quanto vale `len({'a': 1, 'b': 2, 'a': 3})`?",
+         "opcoes": ["3", "2", "1", "Erro"], "correta": 1,
+         "explicacao": "Chaves são únicas: o segundo 'a' substitui o primeiro. Sobram 2 pares."},
+        {"pergunta": "O que `set(['py', 'c', 'py'])` gera?",
+         "opcoes": ["['py', 'c', 'py']", "{'py', 'c'}", "('py', 'c')", "Erro"], "correta": 1,
+         "explicacao": "Um set guarda cada valor uma única vez."},
+        {"pergunta": "Como adicionar a chave 'nivel' com valor 2 ao dicionário `jogador`?",
+         "opcoes": ["jogador.append('nivel', 2)", "jogador['nivel'] = 2", "jogador.add(nivel=2)", "jogador + {'nivel': 2}"],
+         "correta": 1, "explicacao": "Basta atribuir um valor à nova chave."},
+    ],
+    "desafios": [
+        {
+            "titulo": "Ficha pessoal",
+            "enunciado": "Crie um dicionário `pessoa` com as chaves 'nome', 'sobrenome', 'idade' e 'cidade'. "
+                         "Depois, com um for e .items(), mostre cada informação neste formato:\n\nnome: Ana",
+            "inicial": "pessoa = {\n    \n}\n",
+            "dica": "for chave, valor in pessoa.items():\n    print(f\"{chave}: {valor}\")",
+            "solucao": "pessoa = {\n    'nome': 'Ana',\n    'sobrenome': 'Silva',\n    'idade': 28,\n    'cidade': 'Recife',\n}\n"
+                       "for chave, valor in pessoa.items():\n    print(f\"{chave}: {valor}\")",
+            "casos": [caso([
+                var_existe("pessoa", dict),
+                regra(lambda o, n, c: set(n["pessoa"]) == {"nome", "sobrenome", "idade", "cidade"},
+                      "O dicionário precisa ter exatamente as chaves nome, sobrenome, idade e cidade."),
+                regra(lambda o, n, c: normalizar(o) == "\n".join(f"{k}: {v}" for k, v in n["pessoa"].items()),
+                      "Mostre uma linha 'chave: valor' para cada item, na ordem do dicionário."),
+                tem(".items()")])],
+        },
+        {
+            "titulo": "Glossário de Python",
+            "enunciado": "Crie um dicionário `glossario` com pelo menos 5 termos de Python e seus significados "
+                         "(ex.: 'lista': 'coleção ordenada de itens'). Mostre todos em ordem alfabética, um por linha:\n\n"
+                         "lista: coleção ordenada de itens",
+            "inicial": "glossario = {}\n",
+            "dica": "for termo in sorted(glossario):\n    print(f\"{termo}: {glossario[termo]}\")",
+            "solucao": "glossario = {\n    'lista': 'coleção ordenada de itens',\n    'tupla': 'lista que não pode mudar',\n"
+                       "    'dicionário': 'pares de chave e valor',\n    'for': 'laço que percorre itens',\n"
+                       "    'if': 'decide o que fazer',\n}\nfor termo in sorted(glossario):\n    print(f\"{termo}: {glossario[termo]}\")",
+            "casos": [caso([
+                var_existe("glossario", dict),
+                regra(lambda o, n, c: len(n["glossario"]) >= 5, "O glossário precisa de pelo menos 5 termos."),
+                regra(lambda o, n, c: normalizar(o) == "\n".join(f"{t}: {n['glossario'][t]}" for t in sorted(n["glossario"])),
+                      "Mostre 'termo: significado' para cada termo, em ordem alfabética."),
+                tem("sorted(")])],
+        },
+        {
+            "titulo": "Rios do mundo",
+            "enunciado": "O dicionário `rios` é fornecido (rio: país). Mostre:\n"
+                         "1. Para cada rio: <Rio> passa por <País>.\n"
+                         "2. Uma linha com os rios: Rios: Nilo, Amazonas, Yangtzé\n"
+                         "3. Uma linha com os países: Países: Egito, Brasil, China\n\n"
+                         "Todos os nomes com iniciais maiúsculas.",
+            "inicial": "# rios é fornecido. Para testar: {'nilo': 'egito', 'amazonas': 'brasil', 'yangtzé': 'china'}\n\n",
+            "dica": "Para as linhas 2 e 3, monte uma lista com os nomes em title() e use ', '.join(lista).",
+            "solucao": "for rio, pais in rios.items():\n    print(f\"{rio.title()} passa por {pais.title()}.\")\n\n"
+                       "nomes = []\nfor rio in rios.keys():\n    nomes.append(rio.title())\nprint('Rios: ' + ', '.join(nomes))\n\n"
+                       "paises = []\nfor pais in rios.values():\n    paises.append(pais.title())\nprint('Países: ' + ', '.join(paises))",
+            "casos": [caso([saida(_rios(r))], {"rios": r}) for r in [
+                {'nilo': 'egito', 'amazonas': 'brasil', 'yangtzé': 'china'},
+                {'são francisco': 'brasil', 'danúbio': 'áustria'}]],
+        },
+        {
+            "titulo": "Contador de palavras",
+            "enunciado": "A lista `palavras` é fornecida. Crie o dicionário `contagem` com quantas vezes cada palavra aparece, "
+                         "usando o método get(), e mostre o dicionário com print(contagem).",
+            "inicial": "# palavras é fornecida. Para testar: ['python', 'é', 'legal', 'python', 'muito', 'legal', 'python']\n\ncontagem = {}\n",
+            "dica": "for p in palavras:\n    contagem[p] = contagem.get(p, 0) + 1",
+            "solucao": "contagem = {}\nfor p in palavras:\n    contagem[p] = contagem.get(p, 0) + 1\nprint(contagem)",
+            "casos": [caso([var_igual("contagem", _contagem(p)), tem(".get("), saida(str(_contagem(p)))], {"palavras": p})
+                      for p in [['python', 'é', 'legal', 'python', 'muito', 'legal', 'python'], ['a', 'b', 'a'], []]],
+        },
+        {
+            "titulo": "Caça-bugs: a chave sumida",
+            "enunciado": "Este código quebra com KeyError quando o usuário não tem e-mail. Conserte usando get() para mostrar "
+                         "'sem e-mail' quando a chave não existir. O verificador também testa um usuário que TEM e-mail.",
+            "inicial": "# usuario é fornecido. Para testar: {'nome': 'ana', 'nivel': 3}\nprint(usuario['email'])\n",
+            "dica": "usuario.get('email', 'sem e-mail')",
+            "solucao": "print(usuario.get('email', 'sem e-mail'))",
+            "casos": [caso([saida("sem e-mail"), tem(".get(")], {"usuario": {'nome': 'ana', 'nivel': 3}}),
+                      caso([saida("bia@exemplo.com")], {"usuario": {'nome': 'bia', 'email': 'bia@exemplo.com'}})],
+        },
+    ],
+    "chefe": {
+        "titulo": "O Oráculo dos Times",
+        "enunciado": "A lista `jogadores` (fornecida) tem um dicionário por jogador, com 'nome', 'pontos' e 'time'.\n"
+                     "1. Crie o dicionário `pontos_por_time`, somando os pontos de cada time.\n"
+                     "2. Mostre cada time em ordem alfabética: azul: 270\n"
+                     "3. Mostre o jogador com mais pontos: Campeão: Carla\n\n"
+                     "O Oráculo vai testar com times e jogadores diferentes!",
+        "inicial": "# jogadores é fornecida. Para testar:\n# [{'nome': 'ana', 'pontos': 120, 'time': 'azul'}, ...]\n\n",
+        "dica": "Comece com pontos_por_time = {} e campeao = jogadores[0]. No for, some com get() e troque o campeão quando achar mais pontos.",
+        "solucao": "pontos_por_time = {}\ncampeao = jogadores[0]\nfor j in jogadores:\n    time = j['time']\n"
+                   "    pontos_por_time[time] = pontos_por_time.get(time, 0) + j['pontos']\n"
+                   "    if j['pontos'] > campeao['pontos']:\n        campeao = j\n\n"
+                   "for time in sorted(pontos_por_time):\n    print(f\"{time}: {pontos_por_time[time]}\")\n"
+                   "print(f\"Campeão: {campeao['nome'].title()}\")",
+        "casos": [caso([var_igual("pontos_por_time", _times(j)[0]), saida(_times(j)[1])], {"jogadores": j}) for j in [_JOG1, _JOG2]],
+    },
+}
+
+# ---------------------------------------------------------------------------
+# CAPÍTULO 7: Entrada do usuário e laços while
+# ---------------------------------------------------------------------------
+
+def _ingressos(idades):
+    out = []
+    for i in idades:
+        if i == "sair":
+            break
+        i = int(i)
+        out.append("Grátis." if i < 3 else "R$ 10." if i <= 12 else "R$ 15.")
+    return "\n".join(out)
+
+
+def _lanchonete(pedidos):
+    restantes = [p for p in pedidos if p != "pastrami"]
+    linhas = ["O pastrami acabou."] + [f"Preparei seu sanduíche de {s}." for s in restantes]
+    return restantes, "\n".join(linhas)
+
+
+def _adivinha(segredo, palpites):
+    out = []
+    t = 0
+    for p in palpites:
+        if p == "desisto":
+            out.append(f"O número era {segredo}.")
+            break
+        t += 1
+        p = int(p)
+        if p < segredo:
+            out.append("Mais alto!")
+        elif p > segredo:
+            out.append("Mais baixo!")
+        else:
+            out.append(f"Acertou! Tentativas: {t}")
+            break
+    return "\n".join(out)
+
+
+CAP7 = {
+    "num": 7,
+    "titulo": "Entrada e laços while",
+    "subtitulo": "input(), while, break e continue",
+    "licoes": [
+        {
+            "titulo": "input(): conversando com o usuário",
+            "texto": [
+                "`input('pergunta')` mostra a pergunta, espera a pessoa digitar e devolve o que ela digitou.",
+                "O que vem do input é **sempre texto** (str). Para fazer contas, converta: `idade = int(input('Idade? '))`.",
+                "O operador `%` (módulo) dá o resto da divisão: `7 % 2` é 1. Se `n % 2 == 0`, o número é par.",
+                "## Como funciona aqui",
+                "No PyQuest ninguém digita durante a execução: os exemplos e os testes já trazem as respostas prontas, "
+                "que aparecem na saída logo depois de cada pergunta.",
+            ],
+            "ctx": {"__entradas__": ["Ana", "17"]},
+            "exemplo": "nome = input(\"Qual é o seu nome? \")\nidade = int(input(\"Quantos anos você tem? \"))\n"
+                       "print(f\"Olá, {nome}! Ano que vem você terá {idade + 1} anos.\")\n\n"
+                       "if idade % 2 == 0:\n    print(\"Sua idade é um número par.\")\nelse:\n    print(\"Sua idade é um número ímpar.\")",
+        },
+        {
+            "titulo": "O laço while",
+            "texto": [
+                "`while condição:` repete o bloco **enquanto** a condição for verdadeira.",
+                "Use while quando você não sabe quantas voltas o laço vai dar, como ao ler respostas até a pessoa digitar 'sair'.",
+                "`contador += 1` é o mesmo que `contador = contador + 1`.",
+                "• `break` sai do laço na hora.",
+                "• `continue` pula para a próxima volta.",
+                "• Uma **flag** (como `ativo = True`) ajuda a controlar laços com várias formas de parar.",
+                "## Cuidado com o laço infinito",
+                "Se a condição nunca ficar falsa, o laço não termina. Esqueceu de somar 1 no contador? Laço infinito! "
+                "O PyQuest interrompe programas que rodam tempo demais.",
+            ],
+            "ctx": {"__entradas__": ["oi", "tudo bem?", "sair"]},
+            "exemplo": "contador = 1\nwhile contador <= 5:\n    print(contador)\n    contador += 1\n\n"
+                       "mensagem = ''\nwhile mensagem != 'sair':\n    mensagem = input(\"Diga algo (ou 'sair'): \")\n"
+                       "    if mensagem != 'sair':\n        print(f\"Você disse: {mensagem}\")\n\n"
+                       "n = 0\nwhile n < 10:\n    n += 1\n    if n % 2 == 0:\n        continue\n    print(n, 'é ímpar')",
+        },
+        {
+            "titulo": "while com listas e dicionários",
+            "texto": [
+                "Não modifique uma lista dentro de um `for` que a percorre. Para mover ou apagar itens, use `while`.",
+                "• Mover itens: `while pendentes:` com `item = pendentes.pop()` e depois `confirmados.append(item)`.",
+                "• Apagar todas as ocorrências: `while 'gato' in pets: pets.remove('gato')`.",
+                "• Preencher um dicionário com respostas: leia a pergunta no laço e guarde em `respostas[nome] = resposta`.",
+            ],
+            "ctx": {"__entradas__": ["Ana", "Japão", "sim", "Beto", "Peru", "nao"]},
+            "exemplo": "pendentes = ['ana', 'beto', 'carla']\nconfirmados = []\nwhile pendentes:\n    usuario = pendentes.pop()\n"
+                       "    print(f\"Confirmando: {usuario.title()}\")\n    confirmados.append(usuario)\nprint(confirmados)\n\n"
+                       "pets = ['gato', 'cachorro', 'gato', 'peixe', 'gato']\nwhile 'gato' in pets:\n    pets.remove('gato')\nprint(pets)\n\n"
+                       "respostas = {}\ncontinuar = 'sim'\nwhile continuar == 'sim':\n    nome = input(\"Seu nome: \")\n"
+                       "    lugar = input(\"Que lugar você quer conhecer? \")\n    respostas[nome] = lugar\n"
+                       "    continuar = input(\"Mais alguém vai responder? (sim/nao) \")\nprint(respostas)",
+        },
+    ],
+    "quiz": [
+        {"pergunta": "Qual o tipo do valor devolvido por `input()`?",
+         "opcoes": ["int", "str", "float", "Depende do que foi digitado"], "correta": 1,
+         "explicacao": "input() sempre devolve texto. Converta com int() ou float() para fazer contas."},
+        {"pergunta": "Quanto vale `int('5') + 1`?", "opcoes": ["'51'", "6", "Erro", "'6'"], "correta": 1,
+         "explicacao": "int('5') vira o número 5, e 5 + 1 = 6."},
+        {"pergunta": "Quanto vale `17 % 5`?", "opcoes": ["3", "2", "3.4", "12"], "correta": 1,
+         "explicacao": "17 dividido por 5 dá 3 e sobra 2. O % devolve o resto."},
+        {"pergunta": "Quantas linhas são mostradas?", "codigo": "n = 1\nwhile n < 4:\n    print(n)\n    n += 1",
+         "opcoes": ["3", "4", "2", "Infinitas"], "correta": 0,
+         "explicacao": "Mostra 1, 2 e 3. Quando n vira 4, a condição n < 4 fica falsa."},
+        {"pergunta": "O que `break` faz dentro de um laço?",
+         "opcoes": ["Pula para a próxima volta", "Sai do laço imediatamente", "Para o programa todo", "Reinicia o laço"],
+         "correta": 1, "explicacao": "break encerra o laço. Quem pula para a próxima volta é o continue."},
+        {"pergunta": "Por que este laço nunca termina?", "codigo": "x = 1\nwhile x <= 3:\n    print(x)",
+         "opcoes": ["Faltam os dois-pontos", "x nunca muda, então x <= 3 é sempre True", "print está errado", "while não aceita <="],
+         "correta": 1, "explicacao": "Faltou x += 1 dentro do laço."},
+        {"pergunta": "Qual o jeito certo de remover TODAS as ocorrências de 'gato' da lista pets?",
+         "opcoes": ["pets.remove('gato')", "while 'gato' in pets: pets.remove('gato')", "del pets['gato']", "pets.pop('gato')"],
+         "correta": 1, "explicacao": "remove() apaga só a primeira. O while repete até não sobrar nenhuma."},
+    ],
+    "desafios": [
+        {
+            "titulo": "Locadora de carros",
+            "enunciado": "Pergunte com input() que carro a pessoa quer alugar e responda:\n\nVou ver se tenho um <carro> disponível.",
+            "inicial": "# Use input() para perguntar o carro\n",
+            "dica": "carro = input(\"Que carro você quer alugar? \")",
+            "solucao": "carro = input(\"Que carro você quer alugar? \")\nprint(f\"Vou ver se tenho um {carro} disponível.\")",
+            "casos": [caso([saida(f"Vou ver se tenho um {c} disponível.", flex=True), tem("input(")], entradas(c))
+                      for c in ["Fusca", "Uno"]],
+        },
+        {
+            "titulo": "Par ou ímpar",
+            "enunciado": "Leia um número inteiro com input() e mostre '<n> é par.' ou '<n> é ímpar.'",
+            "inicial": "",
+            "dica": "numero = int(input(\"Digite um número: \")) e depois teste numero % 2 == 0.",
+            "solucao": "numero = int(input(\"Digite um número: \"))\nif numero % 2 == 0:\n    print(f\"{numero} é par.\")\n"
+                       "else:\n    print(f\"{numero} é ímpar.\")",
+            "casos": [caso([saida(f"{n} é {'par' if n % 2 == 0 else 'ímpar'}.", flex=True)], entradas(str(n))) for n in [4, 7, 0]],
+        },
+        {
+            "titulo": "Montando a pizza",
+            "enunciado": "Peça coberturas com input() repetidamente até a pessoa digitar 'sair'. Para cada cobertura, mostre "
+                         "'Adicionando <cobertura>.'. No fim, mostre 'Pizza pronta!'.",
+            "inicial": "",
+            "dica": "while True: leia a cobertura; se for 'sair', break; senão, mostre a mensagem.",
+            "solucao": "while True:\n    cobertura = input(\"Cobertura (ou 'sair'): \")\n    if cobertura == 'sair':\n        break\n"
+                       "    print(f\"Adicionando {cobertura}.\")\nprint(\"Pizza pronta!\")",
+            "casos": [caso([saida("\n".join([f"Adicionando {x}." for x in e[:-1]] + ["Pizza pronta!"]), flex=True),
+                            tem("while")], entradas(*e))
+                      for e in [["queijo", "tomate", "sair"], ["sair"], ["bacon", "sair"]]],
+        },
+        {
+            "titulo": "Bilheteria do cinema",
+            "enunciado": "Leia idades com input() até a pessoa digitar 'sair'. Para cada idade, mostre o preço:\n"
+                         "• menos de 3 anos: Grátis.\n• de 3 a 12 anos: R$ 10.\n• mais de 12 anos: R$ 15.",
+            "inicial": "",
+            "dica": "Leia como texto, teste se é 'sair' e só depois converta com int().",
+            "solucao": "while True:\n    resposta = input(\"Idade (ou 'sair'): \")\n    if resposta == 'sair':\n        break\n"
+                       "    idade = int(resposta)\n    if idade < 3:\n        print(\"Grátis.\")\n    elif idade <= 12:\n"
+                       "        print(\"R$ 10.\")\n    else:\n        print(\"R$ 15.\")",
+            "casos": [caso([saida(_ingressos(e), flex=True)], entradas(*e))
+                      for e in [["2", "10", "30", "sair"], ["12", "3", "13", "sair"], ["sair"]]],
+        },
+        {
+            "titulo": "Lanchonete sem pastrami",
+            "enunciado": "A lista `pedidos` é fornecida. O pastrami acabou!\n"
+                         "1. Mostre 'O pastrami acabou.' e remova TODOS os 'pastrami' de pedidos usando while.\n"
+                         "2. Crie a lista `prontos`. Enquanto houver pedidos, tire o PRIMEIRO com pop(0), mostre "
+                         "'Preparei seu sanduíche de <s>.' e coloque-o em prontos.",
+            "inicial": "# pedidos é fornecida. Para testar: ['misto', 'pastrami', 'atum', 'pastrami', 'queijo']\n\n",
+            "dica": "while 'pastrami' in pedidos: ... e depois while pedidos: s = pedidos.pop(0)",
+            "solucao": "print(\"O pastrami acabou.\")\nwhile 'pastrami' in pedidos:\n    pedidos.remove('pastrami')\n\n"
+                       "prontos = []\nwhile pedidos:\n    s = pedidos.pop(0)\n    print(f\"Preparei seu sanduíche de {s}.\")\n    prontos.append(s)",
+            "casos": [caso([var_igual("pedidos", []), var_igual("prontos", _lanchonete(p)[0]), saida(_lanchonete(p)[1]),
+                            tem("while")], {"pedidos": p})
+                      for p in [['misto', 'pastrami', 'atum', 'pastrami', 'queijo'], ['pastrami', 'frango']]],
+        },
+        {
+            "titulo": "Caça-bugs: o laço sem fim",
+            "enunciado": "Este laço deveria mostrar os números de 1 a 5, mas nunca termina. Conserte!",
+            "inicial": "contador = 1\nwhile contador <= 5:\n    print(contador)\n",
+            "dica": "O contador precisa mudar dentro do laço.",
+            "solucao": "contador = 1\nwhile contador <= 5:\n    print(contador)\n    contador += 1",
+            "casos": [caso([saida("1\n2\n3\n4\n5")])],
+        },
+    ],
+    "chefe": {
+        "titulo": "A Esfinge dos Números",
+        "enunciado": "A variável `segredo` (fornecida) guarda um número. Leia palpites com input() até:\n"
+                     "• acertar: mostre 'Acertou! Tentativas: <n>' e pare;\n"
+                     "• a pessoa digitar 'desisto': mostre 'O número era <segredo>.' e pare.\n"
+                     "Para cada palpite errado, mostre 'Mais alto!' (se o palpite for menor que o segredo) ou 'Mais baixo!'.",
+        "inicial": "# segredo é fornecido. Para testar: segredo = 42, palpites 50, 30 e 42.\n\n",
+        "dica": "tentativas = 0 antes do laço. Dentro: leia, trate 'desisto', converta com int(), some 1 em tentativas e compare.",
+        "solucao": "tentativas = 0\nwhile True:\n    palpite = input(\"Seu palpite: \")\n    if palpite == 'desisto':\n"
+                   "        print(f\"O número era {segredo}.\")\n        break\n    palpite = int(palpite)\n    tentativas += 1\n"
+                   "    if palpite < segredo:\n        print(\"Mais alto!\")\n    elif palpite > segredo:\n        print(\"Mais baixo!\")\n"
+                   "    else:\n        print(f\"Acertou! Tentativas: {tentativas}\")\n        break",
+        "casos": [caso([saida(_adivinha(s, p), flex=True)], {"segredo": s, "__entradas__": p})
+                  for s, p in [(42, ["50", "30", "42"]), (7, ["7"]), (10, ["3", "desisto"]), (5, ["9", "1", "4", "6", "5"])]],
+    },
+}
+
+# ---------------------------------------------------------------------------
+# CAPÍTULO 8: Funções
+# ---------------------------------------------------------------------------
+
+CAP8 = {
+    "num": 8,
+    "titulo": "Funções",
+    "subtitulo": "def, argumentos, return, *args e **kwargs",
+    "licoes": [
+        {
+            "titulo": "Definindo funções",
+            "texto": [
+                "Uma **função** é um bloco de código com nome, que você escreve uma vez e usa quantas vezes quiser.",
+                "`def saudar():` define a função, e o bloco indentado é o corpo. Para usar, **chame** a função: `saudar()`.",
+                "Um texto com três aspas logo abaixo do def é a **docstring**: ela explica o que a função faz.",
+                "## Parâmetros e argumentos",
+                "Em `def saudar(nome):`, `nome` é um **parâmetro**. Na chamada `saudar('ana')`, `'ana'` é o **argumento**, "
+                "o valor que entra no parâmetro.",
+            ],
+            "exemplo": "def saudar(nome):\n    \"\"\"Mostra uma saudação simples.\"\"\"\n    print(f\"Olá, {nome.title()}!\")\n\n"
+                       "saudar('ana')\nsaudar('beto')",
+        },
+        {
+            "titulo": "Tipos de argumento",
+            "texto": [
+                "• **Posicionais**: a ordem importa. `descrever_pet('rex', 'cachorro')`.",
+                "• **Nomeados**: você diz qual é qual, e a ordem não importa. `descrever_pet(tipo='gato', nome='mimi')`.",
+                "• **Valor padrão**: `def descrever_pet(nome, tipo='cachorro'):` deixa o argumento opcional. "
+                "Parâmetros com padrão vêm depois dos sem padrão.",
+                "Chamar a função com argumentos faltando ou sobrando dá `TypeError`, e a mensagem diz qual argumento faltou.",
+            ],
+            "exemplo": "def descrever_pet(nome, tipo='cachorro'):\n    print(f\"Tenho um {tipo} chamado {nome.title()}.\")\n\n"
+                       "descrever_pet('rex')\ndescrever_pet('mimi', 'gato')\ndescrever_pet(tipo='hamster', nome='bolinha')",
+        },
+        {
+            "titulo": "Devolvendo valores com return",
+            "texto": [
+                "`return` devolve um valor para quem chamou a função. Assim você guarda o resultado numa variável e usa depois.",
+                "Uma função sem return devolve `None`. Um erro comum é usar `print` dentro da função e achar que ela devolveu o valor.",
+                "Funções podem devolver qualquer coisa: números, textos, listas e dicionários.",
+                "Um parâmetro opcional pode começar vazio, como `meio=''`, e você testa `if meio:` dentro da função.",
+            ],
+            "exemplo": "def nome_completo(primeiro, ultimo, meio=''):\n    if meio:\n        nome = f\"{primeiro} {meio} {ultimo}\"\n"
+                       "    else:\n        nome = f\"{primeiro} {ultimo}\"\n    return nome.title()\n\n"
+                       "def criar_pessoa(nome, idade=None):\n    pessoa = {'nome': nome}\n    if idade:\n        pessoa['idade'] = idade\n"
+                       "    return pessoa\n\nmusico = nome_completo('jimi', 'hendrix')\nprint(musico)\n"
+                       "print(nome_completo('john', 'hooker', 'lee'))\nprint(criar_pessoa('ana', 30))",
+        },
+        {
+            "titulo": "Listas, *args, **kwargs e módulos",
+            "texto": [
+                "Quando você passa uma lista para uma função, ela pode **modificar** a lista original. "
+                "Para proteger o original, passe uma cópia: `funcao(lista[:])`.",
+                "`*coberturas` junta qualquer quantidade de argumentos numa tupla: `fazer_pizza(30, 'queijo', 'tomate')`.",
+                "`**info` junta argumentos nomeados extras num dicionário: `criar_perfil('ana', cidade='recife')`.",
+                "## Módulos",
+                "Funções podem ficar em outros arquivos (módulos) e ser importadas: `from math import sqrt` ou `import random`. "
+                "Aqui no PyQuest você usa os módulos da biblioteca padrão do Python.",
+            ],
+            "exemplo": "def fazer_pizza(tamanho, *coberturas):\n    print(f\"Pizza de {tamanho} cm com:\")\n    for c in coberturas:\n"
+                       "        print(f\"- {c}\")\n\ndef criar_perfil(nome, **info):\n    info['nome'] = nome\n    return info\n\n"
+                       "fazer_pizza(30, 'queijo')\nfazer_pizza(40, 'queijo', 'tomate', 'milho')\n"
+                       "print(criar_perfil('ana', cidade='recife', curso='python'))\n\nfrom math import sqrt\nprint(sqrt(81))",
+        },
+    ],
+    "quiz": [
+        {"pergunta": "Como se define uma função em Python?",
+         "opcoes": ["function saudar():", "def saudar():", "func saudar()", "define saudar:"], "correta": 1,
+         "explicacao": "Funções começam com def, o nome, os parênteses e os dois-pontos."},
+        {"pergunta": "O que este código mostra?", "codigo": "def dobro(x):\n    return x * 2\n\nprint(dobro(dobro(3)))",
+         "opcoes": ["6", "12", "9", "Erro"], "correta": 1,
+         "explicacao": "dobro(3) é 6, e dobro(6) é 12."},
+        {"pergunta": "Com `def f(nome, idade=10):`, qual chamada dá erro?",
+         "opcoes": ["f('ana')", "f('ana', 20)", "f(idade=5, nome='ana')", "f()"], "correta": 3,
+         "explicacao": "nome não tem valor padrão, então é obrigatório."},
+        {"pergunta": "O que uma função sem return devolve?", "opcoes": ["0", "''", "None", "Erro"], "correta": 2,
+         "explicacao": "Sem return, a função devolve None."},
+        {"pergunta": "Dentro de `def f(*nums):`, o que é `nums`?",
+         "opcoes": ["Uma lista", "Uma tupla", "Um dicionário", "Um número"], "correta": 1,
+         "explicacao": "*args junta os argumentos numa tupla."},
+        {"pergunta": "E dentro de `def f(**info):`, o que é `info`?",
+         "opcoes": ["Uma lista", "Uma tupla", "Um dicionário", "Uma string"], "correta": 2,
+         "explicacao": "**kwargs junta os argumentos nomeados num dicionário."},
+        {"pergunta": "O que é mostrado?", "codigo": "def add(lista):\n    lista.append(4)\n\nnums = [1, 2, 3]\nadd(nums)\nprint(nums)",
+         "opcoes": ["[1, 2, 3]", "[1, 2, 3, 4]", "[4]", "None"], "correta": 1,
+         "explicacao": "A função recebe a mesma lista e a modifica."},
+    ],
+    "desafios": [
+        {
+            "titulo": "Boas-vindas",
+            "enunciado": "Crie a função `boas_vindas(nome)` que DEVOLVE (com return) o texto:\n\nBem-vindo(a), <Nome>!\n\n"
+                         "com o nome com iniciais maiúsculas.",
+            "inicial": "def boas_vindas(nome):\n    pass\n",
+            "dica": "return f\"Bem-vindo(a), {nome.title()}!\"",
+            "solucao": "def boas_vindas(nome):\n    return f\"Bem-vindo(a), {nome.title()}!\"",
+            "casos": [caso([funcao("boas_vindas"), chama("boas_vindas", ["ana"], "Bem-vindo(a), Ana!"),
+                            chama("boas_vindas", ["joão silva"], "Bem-vindo(a), João Silva!"), tem("return")])],
+        },
+        {
+            "titulo": "Fábrica de camisetas",
+            "enunciado": "Crie `fazer_camiseta(tamanho='G', mensagem='Eu amo Python')` que devolve:\n\n"
+                         "Camiseta <tamanho> com a frase: <mensagem>\n\n"
+                         "O verificador vai chamar a função com e sem argumentos, inclusive com argumentos nomeados.",
+            "inicial": "def fazer_camiseta():\n    pass\n",
+            "dica": "Os valores padrão ficam na própria linha do def: def fazer_camiseta(tamanho='G', mensagem='Eu amo Python'):",
+            "solucao": "def fazer_camiseta(tamanho='G', mensagem='Eu amo Python'):\n"
+                       "    return f\"Camiseta {tamanho} com a frase: {mensagem}\"",
+            "casos": [caso([
+                chama("fazer_camiseta", [], "Camiseta G com a frase: Eu amo Python"),
+                chama("fazer_camiseta", ["M"], "Camiseta M com a frase: Eu amo Python"),
+                chama("fazer_camiseta", [], "Camiseta G com a frase: Olá!", {"mensagem": "Olá!"}),
+                chama("fazer_camiseta", ["P", "Código é arte"], "Camiseta P com a frase: Código é arte")])],
+        },
+        {
+            "titulo": "Nome completo",
+            "enunciado": "Crie `nome_completo(primeiro, ultimo, meio='')` que devolve o nome com iniciais maiúsculas, "
+                         "incluindo o nome do meio só quando ele for informado.\n\n"
+                         "nome_completo('john', 'hooker', 'lee') → 'John Lee Hooker'",
+            "inicial": "def nome_completo(primeiro, ultimo, meio=''):\n    pass\n",
+            "dica": "if meio: monte com os três nomes; senão, com dois. Depois use .title().",
+            "solucao": "def nome_completo(primeiro, ultimo, meio=''):\n    if meio:\n        nome = f\"{primeiro} {meio} {ultimo}\"\n"
+                       "    else:\n        nome = f\"{primeiro} {ultimo}\"\n    return nome.title()",
+            "casos": [caso([chama("nome_completo", ["ada", "lovelace"], "Ada Lovelace"),
+                            chama("nome_completo", ["john", "hooker", "lee"], "John Lee Hooker"),
+                            chama("nome_completo", ["grace", "hopper"], "Grace Brewster Hopper", {"meio": "brewster"})])],
+        },
+        {
+            "titulo": "Álbum musical",
+            "enunciado": "Crie `criar_album(artista, titulo, faixas=None)` que devolve um dicionário com as chaves 'artista' e "
+                         "'titulo'. Se `faixas` for informado, inclua também a chave 'faixas'.",
+            "inicial": "def criar_album(artista, titulo, faixas=None):\n    pass\n",
+            "dica": "album = {'artista': artista, 'titulo': titulo} e depois if faixas: album['faixas'] = faixas",
+            "solucao": "def criar_album(artista, titulo, faixas=None):\n    album = {'artista': artista, 'titulo': titulo}\n"
+                       "    if faixas:\n        album['faixas'] = faixas\n    return album",
+            "casos": [caso([chama("criar_album", ["Gal Costa", "Fa-tal"], {'artista': 'Gal Costa', 'titulo': 'Fa-tal'}),
+                            chama("criar_album", ["Tim Maia", "Racional"], {'artista': 'Tim Maia', 'titulo': 'Racional', 'faixas': 9},
+                                  {"faixas": 9})])],
+        },
+        {
+            "titulo": "Somador universal",
+            "enunciado": "Crie `somar(*numeros)` que devolve a soma de quantos números receber. `somar()` deve devolver 0.",
+            "inicial": "def somar():\n    pass\n",
+            "dica": "Comece com total = 0 e percorra numeros com for.",
+            "solucao": "def somar(*numeros):\n    total = 0\n    for n in numeros:\n        total += n\n    return total",
+            "casos": [caso([chama("somar", [], 0), chama("somar", [5], 5), chama("somar", [1, 2, 3], 6),
+                            chama("somar", [10, -4, 2.5], 8.5), tem("*")])],
+        },
+        {
+            "titulo": "Caça-bugs: print não é return",
+            "enunciado": "Este código quebra com TypeError: a função MOSTRA o dobro, mas não DEVOLVE nada. "
+                         "Conserte para que o programa mostre 9.",
+            "inicial": "def dobro(n):\n    print(n * 2)\n\nresultado = dobro(4) + 1\nprint(resultado)\n",
+            "dica": "Troque o print dentro da função por return.",
+            "solucao": "def dobro(n):\n    return n * 2\n\nresultado = dobro(4) + 1\nprint(resultado)",
+            "casos": [caso([saida("9"), chama("dobro", [7], 14)])],
+        },
+    ],
+    "chefe": {
+        "titulo": "O Mago das Funções",
+        "enunciado": "Crie três funções que trabalham juntas:\n"
+                     "1. `media(notas)`: devolve a média de uma lista de notas, arredondada com round(valor, 1). Lista vazia devolve 0.\n"
+                     "2. `situacao(notas, minima=6)`: devolve 'Aprovado' se a média for maior ou igual a `minima`, senão 'Reprovado'. "
+                     "Use a função media!\n"
+                     "3. `boletim(nome, *notas)`: devolve, por exemplo, 'Ana: média 7.5 - Aprovado' (nome com inicial maiúscula).",
+        "inicial": "def media(notas):\n    pass\n\n\ndef situacao(notas, minima=6):\n    pass\n\n\ndef boletim(nome, *notas):\n    pass\n",
+        "dica": "Em boletim, notas é uma tupla: transforme em lista com list(notas) e reaproveite media() e situacao().",
+        "solucao": "def media(notas):\n    if not notas:\n        return 0\n    return round(sum(notas) / len(notas), 1)\n\n\n"
+                   "def situacao(notas, minima=6):\n    if media(notas) >= minima:\n        return 'Aprovado'\n    return 'Reprovado'\n\n\n"
+                   "def boletim(nome, *notas):\n    notas = list(notas)\n    return f\"{nome.title()}: média {media(notas)} - {situacao(notas)}\"",
+        "casos": [caso([
+            chama("media", [[7, 8]], 7.5), chama("media", [[]], 0), chama("media", [[5, 6, 7]], 6.0),
+            chama("media", [[10, 9, 9]], 9.3),
+            chama("situacao", [[5, 6]], "Reprovado"), chama("situacao", [[5, 6]], "Aprovado", {"minima": 5}),
+            chama("situacao", [[6, 6]], "Aprovado"),
+            chama("boletim", ["ana", 7, 8], "Ana: média 7.5 - Aprovado"),
+            chama("boletim", ["beto", 3, 4, 5], "Beto: média 4.0 - Reprovado")])],
+    },
+}
+
+# ---------------------------------------------------------------------------
+# CAPÍTULO 9: Classes
+# ---------------------------------------------------------------------------
+
+def _teste_usuario(ns):
+    u = ns["Usuario"]("ada", "lovelace")
+    if u.saudacao() != "Olá, Ada Lovelace!" or u.tentativas_login != 0:
+        return False
+    u.incrementar_tentativas()
+    u.incrementar_tentativas()
+    if u.tentativas_login != 2:
+        return False
+    u.zerar_tentativas()
+    return u.tentativas_login == 0
+
+
+def _teste_clientes(ns):
+    r = ns["Restaurante"]("Bom Prato")
+    if r.clientes_atendidos != 0:
+        return False
+    r.atender(10)
+    if r.clientes_atendidos != 10:
+        return False
+    r.definir_clientes(30)
+    if r.clientes_atendidos != 30:
+        return False
+    r.definir_clientes(5)
+    if r.clientes_atendidos != 30:
+        return False
+    r.atender(2)
+    return r.clientes_atendidos == 32
+
+
+def _teste_banco_basico(ns):
+    C = ns["ContaBancaria"]
+    c = C("ana")
+    if c.titular != "ana" or c.saldo != 0:
+        return False
+    if c.depositar(100) is not True or c.saldo != 100:
+        return False
+    if c.depositar(0) is not False or c.depositar(-5) is not False or c.saldo != 100:
+        return False
+    if c.sacar(30) is not True or c.saldo != 70:
+        return False
+    if c.sacar(500) is not False or c.sacar(-1) is not False or c.saldo != 70:
+        return False
+    return C("beto", 50).saldo == 50
+
+
+def _teste_poupanca(ns):
+    P = ns["ContaPoupanca"]
+    if not issubclass(P, ns["ContaBancaria"]):
+        return False
+    p = P("carla", 1000)
+    if p.taxa != 0.01:
+        return False
+    p.render()
+    if p.saldo != 1010.0:
+        return False
+    p2 = P("davi", 200, 0.05)
+    p2.render()
+    p2.render()
+    return p2.saldo == 220.5 and p2.sacar(20) is True and p2.saldo == 200.5
+
+
+CAP9 = {
+    "num": 9,
+    "titulo": "Classes",
+    "subtitulo": "Objetos, atributos, métodos e herança",
+    "licoes": [
+        {
+            "titulo": "Criando uma classe",
+            "texto": [
+                "Uma **classe** é um molde para criar objetos. Cada objeto criado a partir dela é uma **instância**.",
+                "`__init__` é um método especial que roda sempre que você cria uma instância. "
+                "O primeiro parâmetro, `self`, é a própria instância.",
+                "Atributos com `self.` (como `self.nome = nome`) ficam guardados no objeto e podem ser usados em todos os métodos.",
+                "**Métodos** são funções dentro da classe: `def sentar(self):`.",
+                "Por convenção, nomes de classes usam MaiúsculasJuntas: `Cachorro`, `CarroEletrico`.",
+            ],
+            "exemplo": "class Cachorro:\n    \"\"\"Um modelo simples de cachorro.\"\"\"\n\n    def __init__(self, nome, idade):\n"
+                       "        self.nome = nome\n        self.idade = idade\n\n    def sentar(self):\n        print(f\"{self.nome} sentou.\")\n\n"
+                       "    def rolar(self):\n        print(f\"{self.nome} rolou!\")\n\n\nmeu_cachorro = Cachorro('Rex', 6)\n"
+                       "print(f\"Meu cachorro se chama {meu_cachorro.nome} e tem {meu_cachorro.idade} anos.\")\n"
+                       "meu_cachorro.sentar()\noutro = Cachorro('Luna', 3)\noutro.rolar()",
+        },
+        {
+            "titulo": "Mudando atributos",
+            "texto": [
+                "Um atributo pode ter um valor inicial sem vir como parâmetro: `self.km = 0` dentro do `__init__`.",
+                "Há três jeitos de mudar um atributo:",
+                "• Direto: `meu_carro.km = 23`.",
+                "• Com um método que define o valor, como `meu_carro.atualizar_km(23)`. Assim você pode validar, "
+                "por exemplo, impedir que o hodômetro volte.",
+                "• Com um método que soma: `meu_carro.rodar(100)`.",
+            ],
+            "exemplo": "class Carro:\n    def __init__(self, marca, modelo, ano):\n        self.marca = marca\n        self.modelo = modelo\n"
+                       "        self.ano = ano\n        self.km = 0\n\n    def descricao(self):\n"
+                       "        return f\"{self.ano} {self.marca.title()} {self.modelo.title()}\"\n\n"
+                       "    def atualizar_km(self, km):\n        if km >= self.km:\n            self.km = km\n        else:\n"
+                       "            print(\"Você não pode voltar o hodômetro!\")\n\n    def rodar(self, km):\n        self.km += km\n\n\n"
+                       "carro = Carro('fiat', 'uno', 2010)\nprint(carro.descricao())\ncarro.atualizar_km(5000)\ncarro.rodar(120)\n"
+                       "print(f\"Rodou {carro.km} km.\")\ncarro.atualizar_km(10)",
+        },
+        {
+            "titulo": "Herança",
+            "texto": [
+                "Uma classe **filha** herda atributos e métodos de uma classe **mãe**: `class CarroEletrico(Carro):`.",
+                "No `__init__` da filha, chame `super().__init__(...)` para rodar o `__init__` da mãe.",
+                "A filha pode ter atributos e métodos próprios e também **sobrescrever** métodos da mãe, "
+                "criando um método com o mesmo nome.",
+                "## Instâncias como atributos",
+                "Quando uma classe cresce demais, separe partes em outra classe: `self.bateria = Bateria()`.",
+            ],
+            "exemplo": "class Carro:\n    def __init__(self, marca, modelo):\n        self.marca = marca\n        self.modelo = modelo\n\n"
+                       "    def descricao(self):\n        return f\"{self.marca.title()} {self.modelo.title()}\"\n\n"
+                       "    def abastecer(self):\n        print(\"Tanque cheio!\")\n\n\nclass Bateria:\n    def __init__(self, kwh=40):\n"
+                       "        self.kwh = kwh\n\n    def autonomia(self):\n        if self.kwh == 40:\n            return 260\n        return 400\n\n\n"
+                       "class CarroEletrico(Carro):\n    def __init__(self, marca, modelo):\n        super().__init__(marca, modelo)\n"
+                       "        self.bateria = Bateria()\n\n    def abastecer(self):\n        print(\"Carro elétrico não tem tanque!\")\n\n\n"
+                       "tesla = CarroEletrico('tesla', 'model 3')\nprint(tesla.descricao())\n"
+                       "print(f\"Autonomia: {tesla.bateria.autonomia()} km\")\ntesla.abastecer()",
+        },
+        {
+            "titulo": "A biblioteca padrão",
+            "texto": [
+                "Python vem com muitos módulos prontos: a **biblioteca padrão**. O módulo `random`, por exemplo, sorteia números e itens.",
+                "`from random import randint, choice`: `randint(1, 6)` sorteia um inteiro de 1 a 6 e `choice(lista)` sorteia um item.",
+                "Em projetos maiores, cada classe pode ficar em seu próprio arquivo (módulo) e ser importada: `from carro import Carro`.",
+                "Os sorteios mudam a cada execução: rode o exemplo várias vezes!",
+            ],
+            "exemplo": "from random import randint, choice\n\n\nclass Dado:\n    def __init__(self, lados=6):\n        self.lados = lados\n\n"
+                       "    def rolar(self):\n        return randint(1, self.lados)\n\n\nd6 = Dado()\nd20 = Dado(20)\n"
+                       "print('D6:', [d6.rolar() for _ in range(5)])\nprint('D20:', d20.rolar())\n"
+                       "print('Sorteado:', choice(['ana', 'beto', 'carla']))",
+        },
+    ],
+    "quiz": [
+        {"pergunta": "Qual método roda automaticamente ao criar uma instância?",
+         "opcoes": ["__start__", "__init__", "__new_obj__", "criar()"], "correta": 1,
+         "explicacao": "__init__ prepara a instância assim que ela é criada."},
+        {"pergunta": "Para que serve o `self`?",
+         "opcoes": ["É o nome da classe", "Representa a própria instância", "Só é usado em herança", "Guarda variáveis globais"],
+         "correta": 1, "explicacao": "self dá acesso aos atributos e métodos daquela instância."},
+        {"pergunta": "O que é mostrado?",
+         "codigo": "class Gato:\n    def __init__(self, nome):\n        self.nome = nome\n\ng = Gato('mimi')\nprint(g.nome.title())",
+         "opcoes": ["mimi", "Mimi", "Gato", "Erro"], "correta": 1,
+         "explicacao": "g.nome é 'mimi', e title() deixa a inicial maiúscula."},
+        {"pergunta": "Como declarar que `Eletrico` herda de `Carro`?",
+         "opcoes": ["class Eletrico extends Carro:", "class Eletrico(Carro):", "class Eletrico < Carro:", "class Eletrico: Carro"],
+         "correta": 1, "explicacao": "A classe mãe vai entre parênteses."},
+        {"pergunta": "O que `super().__init__(marca)` faz?",
+         "opcoes": ["Cria uma nova classe", "Chama o __init__ da classe mãe", "Apaga a instância", "Importa um módulo"],
+         "correta": 1, "explicacao": "super() dá acesso aos métodos da classe mãe."},
+        {"pergunta": "Qual o resultado?",
+         "codigo": "class Contador:\n    def __init__(self):\n        self.valor = 0\n\n    def somar(self):\n        self.valor += 1\n\n"
+                   "c = Contador()\nc.somar()\nc.somar()\nprint(c.valor)",
+         "opcoes": ["0", "1", "2", "Erro"], "correta": 2,
+         "explicacao": "Cada chamada de somar() soma 1 em self.valor."},
+        {"pergunta": "Qual é a convenção de nome para classes?",
+         "opcoes": ["carro_eletrico", "CarroEletrico", "CARRO_ELETRICO", "carroeletrico"], "correta": 1,
+         "explicacao": "Classes usam MaiúsculasJuntas (CamelCase)."},
+    ],
+    "desafios": [
+        {
+            "titulo": "Restaurante",
+            "enunciado": "Crie a classe `Restaurante` com:\n"
+                         "• __init__(self, nome, cozinha), guardando os dois atributos\n"
+                         "• descrever(self): devolve '<nome> serve comida <cozinha>.'\n"
+                         "• abrir(self): devolve '<nome> está aberto!'",
+            "inicial": "class Restaurante:\n    pass\n",
+            "dica": "self.nome = nome e self.cozinha = cozinha no __init__. Os métodos usam return com f-string.",
+            "solucao": "class Restaurante:\n    def __init__(self, nome, cozinha):\n        self.nome = nome\n        self.cozinha = cozinha\n\n"
+                       "    def descrever(self):\n        return f\"{self.nome} serve comida {self.cozinha}.\"\n\n"
+                       "    def abrir(self):\n        return f\"{self.nome} está aberto!\"",
+            "casos": [caso([
+                classe("Restaurante"),
+                regra(lambda o, n, c: n["Restaurante"]("Sabor de Casa", "mineira").cozinha == "mineira",
+                      "Guarde os atributos nome e cozinha no __init__."),
+                regra(lambda o, n, c: n["Restaurante"]("Sabor de Casa", "mineira").descrever() == "Sabor de Casa serve comida mineira.",
+                      "Restaurante('Sabor de Casa', 'mineira').descrever() deveria devolver 'Sabor de Casa serve comida mineira.'"),
+                regra(lambda o, n, c: n["Restaurante"]("Kyoto", "japonesa").abrir() == "Kyoto está aberto!",
+                      "Restaurante('Kyoto', 'japonesa').abrir() deveria devolver 'Kyoto está aberto!'")])],
+        },
+        {
+            "titulo": "Usuário do sistema",
+            "enunciado": "Crie a classe `Usuario` com:\n"
+                         "• atributos nome, sobrenome e tentativas_login (começa em 0)\n"
+                         "• saudacao(): devolve 'Olá, <Nome> <Sobrenome>!' com iniciais maiúsculas\n"
+                         "• incrementar_tentativas(): soma 1 em tentativas_login\n"
+                         "• zerar_tentativas(): volta tentativas_login para 0",
+            "inicial": "class Usuario:\n    pass\n",
+            "dica": "self.tentativas_login = 0 no __init__, sem precisar de parâmetro.",
+            "solucao": "class Usuario:\n    def __init__(self, nome, sobrenome):\n        self.nome = nome\n        self.sobrenome = sobrenome\n"
+                       "        self.tentativas_login = 0\n\n    def saudacao(self):\n"
+                       "        return f\"Olá, {self.nome.title()} {self.sobrenome.title()}!\"\n\n"
+                       "    def incrementar_tentativas(self):\n        self.tentativas_login += 1\n\n"
+                       "    def zerar_tentativas(self):\n        self.tentativas_login = 0",
+            "casos": [caso([classe("Usuario"),
+                            regra(lambda o, n, c: _teste_usuario(n),
+                                  "Teste: Usuario('ada', 'lovelace') deve saudar com 'Olá, Ada Lovelace!', começar com 0 tentativas, "
+                                  "ir para 2 após duas chamadas de incrementar_tentativas() e voltar a 0 com zerar_tentativas().")])],
+        },
+        {
+            "titulo": "Clientes atendidos",
+            "enunciado": "Crie a classe `Restaurante(nome)` com o atributo clientes_atendidos começando em 0 e os métodos:\n"
+                         "• atender(n): soma n clientes\n"
+                         "• definir_clientes(n): define o valor, mas nunca deixa diminuir",
+            "inicial": "class Restaurante:\n    pass\n",
+            "dica": "Em definir_clientes, só atribua se n >= self.clientes_atendidos.",
+            "solucao": "class Restaurante:\n    def __init__(self, nome):\n        self.nome = nome\n        self.clientes_atendidos = 0\n\n"
+                       "    def atender(self, n):\n        self.clientes_atendidos += n\n\n    def definir_clientes(self, n):\n"
+                       "        if n >= self.clientes_atendidos:\n            self.clientes_atendidos = n",
+            "casos": [caso([classe("Restaurante"),
+                            regra(lambda o, n, c: _teste_clientes(n),
+                                  "Teste: começa em 0; atender(10) → 10; definir_clientes(30) → 30; definir_clientes(5) "
+                                  "não pode diminuir (continua 30); atender(2) → 32.")])],
+        },
+        {
+            "titulo": "Sorveteria (herança)",
+            "enunciado": "Crie `Sorveteria`, filha de `Restaurante`, com:\n"
+                         "• __init__(self, nome, sabores): chame super().__init__ com a cozinha 'gelada' e guarde a lista sabores\n"
+                         "• listar_sabores(): devolve, por exemplo, 'Sabores: chocolate, morango'",
+            "inicial": "class Restaurante:\n    def __init__(self, nome, cozinha):\n        self.nome = nome\n        self.cozinha = cozinha\n\n"
+                       "    def descrever(self):\n        return f\"{self.nome} serve comida {self.cozinha}.\"\n\n\n# Crie a classe Sorveteria abaixo\n",
+            "dica": "super().__init__(nome, 'gelada') e depois self.sabores = sabores. Use ', '.join(self.sabores).",
+            "solucao": "class Restaurante:\n    def __init__(self, nome, cozinha):\n        self.nome = nome\n        self.cozinha = cozinha\n\n"
+                       "    def descrever(self):\n        return f\"{self.nome} serve comida {self.cozinha}.\"\n\n\n"
+                       "class Sorveteria(Restaurante):\n    def __init__(self, nome, sabores):\n        super().__init__(nome, 'gelada')\n"
+                       "        self.sabores = sabores\n\n    def listar_sabores(self):\n        return 'Sabores: ' + ', '.join(self.sabores)",
+            "casos": [caso([
+                classe("Sorveteria"),
+                regra(lambda o, n, c: issubclass(n["Sorveteria"], n["Restaurante"]), "Sorveteria precisa herdar de Restaurante."),
+                regra(lambda o, n, c: n["Sorveteria"]("Gelato", ["chocolate"]).descrever() == "Gelato serve comida gelada.",
+                      "Sorveteria('Gelato', [...]).descrever() deveria devolver 'Gelato serve comida gelada.'"),
+                regra(lambda o, n, c: n["Sorveteria"]("Gelato", ["chocolate", "morango"]).listar_sabores() == "Sabores: chocolate, morango",
+                      "listar_sabores() deveria devolver 'Sabores: chocolate, morango'."),
+                tem("super().__init__")])],
+        },
+        {
+            "titulo": "Admin com privilégios",
+            "enunciado": "Crie duas classes:\n"
+                         "• `Privilegios(lista)`: guarda a lista no atributo privilegios e tem os métodos pode(acao), que devolve "
+                         "True ou False, e listar(), que devolve 'Pode: banir usuário, apagar post'\n"
+                         "• `Admin(nome)`: guarda o nome e tem o atributo privilegios, uma INSTÂNCIA de Privilegios com "
+                         "['banir usuário', 'apagar post']",
+            "inicial": "class Privilegios:\n    pass\n\n\nclass Admin:\n    pass\n",
+            "dica": "No __init__ do Admin: self.privilegios = Privilegios(['banir usuário', 'apagar post'])",
+            "solucao": "class Privilegios:\n    def __init__(self, lista):\n        self.privilegios = lista\n\n    def pode(self, acao):\n"
+                       "        return acao in self.privilegios\n\n    def listar(self):\n        return 'Pode: ' + ', '.join(self.privilegios)\n\n\n"
+                       "class Admin:\n    def __init__(self, nome):\n        self.nome = nome\n"
+                       "        self.privilegios = Privilegios(['banir usuário', 'apagar post'])",
+            "casos": [caso([
+                classe("Privilegios"), classe("Admin"),
+                regra(lambda o, n, c: isinstance(n["Admin"]("ana").privilegios, n["Privilegios"]),
+                      "O atributo privilegios do Admin precisa ser uma instância de Privilegios."),
+                regra(lambda o, n, c: n["Admin"]("ana").privilegios.pode("apagar post") is True
+                      and n["Admin"]("ana").privilegios.pode("voar") is False,
+                      "pode('apagar post') deveria dar True e pode('voar') deveria dar False."),
+                regra(lambda o, n, c: n["Admin"]("ana").privilegios.listar() == "Pode: banir usuário, apagar post",
+                      "listar() deveria devolver 'Pode: banir usuário, apagar post'.")])],
+        },
+        {
+            "titulo": "Caça-bugs: o self esquecido",
+            "enunciado": "Este código dá AttributeError. Descubra o que falta e conserte para mostrar 2.",
+            "inicial": "class Contador:\n    def __init__(self):\n        valor = 0\n\n    def somar(self):\n        self.valor += 1\n\n\n"
+                       "c = Contador()\nc.somar()\nc.somar()\nprint(c.valor)\n",
+            "dica": "Uma variável sem self. some quando o __init__ termina.",
+            "solucao": "class Contador:\n    def __init__(self):\n        self.valor = 0\n\n    def somar(self):\n        self.valor += 1\n\n\n"
+                       "c = Contador()\nc.somar()\nc.somar()\nprint(c.valor)",
+            "casos": [caso([saida("2")])],
+        },
+    ],
+    "chefe": {
+        "titulo": "O Banco Real",
+        "enunciado": "Crie a classe `ContaBancaria`:\n"
+                     "• __init__(self, titular, saldo=0)\n"
+                     "• depositar(valor): soma ao saldo e devolve True. Valores menores ou iguais a zero são recusados (devolve False).\n"
+                     "• sacar(valor): tira do saldo e devolve True. Se o valor for maior que o saldo ou <= 0, recusa e devolve False.\n\n"
+                     "Depois crie `ContaPoupanca`, filha de ContaBancaria, com o parâmetro extra `taxa` (padrão 0.01) e o método "
+                     "`render()`, que soma ao saldo o valor saldo * taxa e arredonda o saldo com round(..., 2).",
+        "inicial": "class ContaBancaria:\n    pass\n\n\nclass ContaPoupanca:\n    pass\n",
+        "dica": "ContaPoupanca.__init__(self, titular, saldo=0, taxa=0.01): chame super().__init__(titular, saldo) e guarde self.taxa.",
+        "solucao": "class ContaBancaria:\n    def __init__(self, titular, saldo=0):\n        self.titular = titular\n        self.saldo = saldo\n\n"
+                   "    def depositar(self, valor):\n        if valor <= 0:\n            return False\n        self.saldo += valor\n        return True\n\n"
+                   "    def sacar(self, valor):\n        if valor <= 0 or valor > self.saldo:\n            return False\n"
+                   "        self.saldo -= valor\n        return True\n\n\nclass ContaPoupanca(ContaBancaria):\n"
+                   "    def __init__(self, titular, saldo=0, taxa=0.01):\n        super().__init__(titular, saldo)\n        self.taxa = taxa\n\n"
+                   "    def render(self):\n        self.saldo = round(self.saldo + self.saldo * self.taxa, 2)",
+        "casos": [caso([
+            classe("ContaBancaria"), classe("ContaPoupanca"),
+            regra(lambda o, n, c: _teste_banco_basico(n),
+                  "Teste da ContaBancaria: começa com saldo 0 (ou o informado); depositar(100) → True e saldo 100; "
+                  "depósitos <= 0 → False; sacar(30) → True e saldo 70; sacar(500) ou sacar(-1) → False sem mudar o saldo."),
+            regra(lambda o, n, c: _teste_poupanca(n),
+                  "Teste da ContaPoupanca: herda de ContaBancaria; taxa padrão 0.01; com saldo 1000, render() deixa 1010.0; "
+                  "com saldo 200 e taxa 0.05, dois render() deixam 220.5.")])],
+    },
+}
+
+# ---------------------------------------------------------------------------
+# CAPÍTULO 10: Arquivos e exceções
+# ---------------------------------------------------------------------------
+
+def _diario(texto):
+    linhas = texto.splitlines()
+    return "\n".join([f"O diário tem {len(linhas)} linhas."] + [f"- {l}" for l in linhas])
+
+
+def _gatos(arqs):
+    out = []
+    for nome in ["gatos.txt", "cachorros.txt"]:
+        if nome in arqs:
+            out.append(arqs[nome].rstrip())
+        else:
+            out.append(f"Arquivo {nome} não encontrado.")
+    return "\n".join(out)
+
+
+def _arquivista(texto):
+    notas = {}
+    invalidas = 0
+    for linha in texto.splitlines():
+        nome, nota = linha.split(",")
+        try:
+            notas[nome] = float(nota)
+        except ValueError:
+            invalidas += 1
+    media = round(sum(notas.values()) / len(notas), 1)
+    aprovados = sorted(n for n, v in notas.items() if v >= 6)
+    return {"media": media, "aprovados": aprovados, "invalidas": invalidas}
+
+
+_NOTAS1 = "ana,8.5\nbeto,dez\ncarla,6\ndavi,4.5\neva,9\nfabio,sete\n"
+_NOTAS2 = "gil,5\nhelena,7.5\nigor,x\n"
+
+CAP10 = {
+    "num": 10,
+    "titulo": "Arquivos e exceções",
+    "subtitulo": "pathlib, try/except e json",
+    "licoes": [
+        {
+            "titulo": "Lendo arquivos",
+            "texto": [
+                "Com o módulo `pathlib`, ler um arquivo de texto é simples: `conteudo = Path('pi.txt').read_text()`.",
+                "`read_text()` devolve o arquivo inteiro como uma string. `splitlines()` transforma essa string numa lista de linhas.",
+                "Em cada linha, `strip()` remove os espaços das pontas.",
+                "## Arquivos no PyQuest",
+                "Cada execução ganha uma pasta própria e temporária. Os exemplos e os testes criam os arquivos de que precisam "
+                "antes de rodar o seu código.",
+            ],
+            "ctx": {"__arquivos__": {"pi_digitos.txt": "3.1415926535\n  8979323846\n  2643383279\n"}},
+            "exemplo": "from pathlib import Path\n\ncaminho = Path('pi_digitos.txt')\nconteudo = caminho.read_text()\n"
+                       "linhas = conteudo.splitlines()\n\npi = ''\nfor linha in linhas:\n    pi += linha.strip()\n\n"
+                       "print(pi)\nprint(f\"Tenho {len(pi)} caracteres de pi.\")\nprint('1415' in pi)",
+        },
+        {
+            "titulo": "Escrevendo arquivos",
+            "texto": [
+                "`Path('arquivo.txt').write_text('conteúdo')` cria o arquivo ou **substitui** todo o conteúdo, se ele já existir.",
+                "Só é possível escrever strings. Para números, converta com `str()` ou use f-strings.",
+                "Para várias linhas, monte uma string com `\\n` no fim de cada linha e escreva tudo de uma vez.",
+                "`Path('arquivo.txt').exists()` diz se o arquivo existe.",
+            ],
+            "exemplo": "from pathlib import Path\n\nlinhas = ['Eu amo programar.', 'Eu amo criar jogos.']\ntexto = ''\n"
+                       "for linha in linhas:\n    texto += linha + '\\n'\n\npath = Path('programacao.txt')\npath.write_text(texto)\n"
+                       "print(path.exists())\nprint(path.read_text())",
+        },
+        {
+            "titulo": "Exceções: try e except",
+            "texto": [
+                "Quando algo dá errado, o Python lança uma **exceção**, como `ZeroDivisionError` ou `FileNotFoundError`. "
+                "Se ninguém tratar, o programa para.",
+                "Com `try`/`except` você trata o erro e o programa continua:",
+                "• O código arriscado vai no `try`.",
+                "• O que fazer se der erro vai no `except TipoDoErro:`.",
+                "• O `else` roda só quando o `try` deu certo.",
+                "Às vezes o melhor é falhar em silêncio: use `pass` dentro do except.",
+                "## Erros comuns",
+                "`int('abc')` dá `ValueError`. Ler um arquivo que não existe dá `FileNotFoundError`.",
+            ],
+            "ctx": {"__entradas__": ["10", "0", "10", "4"]},
+            "exemplo": "for tentativa in range(2):\n    a = input(\"Primeiro número: \")\n    b = input(\"Segundo número: \")\n"
+                       "    try:\n        resultado = int(a) / int(b)\n    except ZeroDivisionError:\n"
+                       "        print(\"Não dá para dividir por zero!\")\n    else:\n        print(f\"Resultado: {resultado}\")\n\n"
+                       "from pathlib import Path\ntry:\n    Path('nao_existe.txt').read_text()\nexcept FileNotFoundError:\n"
+                       "    print(\"Desculpe, o arquivo não existe.\")",
+        },
+        {
+            "titulo": "Guardando dados com json",
+            "texto": [
+                "O módulo `json` transforma listas e dicionários em texto, e de volta, para você salvar dados em arquivos.",
+                "• `json.dumps(dados)` gera o texto; `json.loads(texto)` reconstrói os dados.",
+                "• Junto com pathlib: `path.write_text(json.dumps(dados))` e `dados = json.loads(path.read_text())`.",
+                "Um uso clássico: lembrar o nome do usuário. Se o arquivo existe, cumprimente; se não, pergunte e salve.",
+            ],
+            "ctx": {"__entradas__": ["Ana"]},
+            "exemplo": "import json\nfrom pathlib import Path\n\nnumeros = [2, 3, 5, 7, 11]\nPath('numeros.json').write_text(json.dumps(numeros))\n"
+                       "print(json.loads(Path('numeros.json').read_text()))\n\npath = Path('usuario.json')\nif path.exists():\n"
+                       "    nome = json.loads(path.read_text())\n    print(f\"Bem-vindo de volta, {nome}!\")\nelse:\n"
+                       "    nome = input(\"Qual é o seu nome? \")\n    path.write_text(json.dumps(nome))\n"
+                       "    print(f\"Vou lembrar de você, {nome}!\")",
+        },
+    ],
+    "quiz": [
+        {"pergunta": "O que `Path('a.txt').read_text()` devolve?",
+         "opcoes": ["Uma lista de linhas", "Uma string com todo o conteúdo", "O número de linhas", "None"], "correta": 1,
+         "explicacao": "read_text() devolve o arquivo inteiro como texto. Para ter as linhas, use splitlines()."},
+        {"pergunta": "O que `write_text()` faz se o arquivo já existe?",
+         "opcoes": ["Dá erro", "Acrescenta no fim", "Substitui todo o conteúdo", "Cria uma cópia"], "correta": 2,
+         "explicacao": "write_text() sobrescreve o arquivo inteiro."},
+        {"pergunta": "Qual exceção acontece em `int('abc')`?",
+         "opcoes": ["TypeError", "ValueError", "NameError", "KeyError"], "correta": 1,
+         "explicacao": "O tipo (str) é aceito, mas o valor 'abc' não vira número: ValueError."},
+        {"pergunta": "Quando o bloco `else` de um try roda?",
+         "opcoes": ["Sempre", "Só quando ocorre erro", "Só quando o try termina sem erro", "Nunca"], "correta": 2,
+         "explicacao": "O else é o caminho de sucesso do try."},
+        {"pergunta": "O que é mostrado?", "codigo": "try:\n    print(10 / 0)\nexcept ZeroDivisionError:\n    print('ops')",
+         "opcoes": ["ops", "Infinity", "ZeroDivisionError", "0"], "correta": 0,
+         "explicacao": "A divisão por zero é capturada pelo except."},
+        {"pergunta": "Para que serve `json.dumps(dados)`?",
+         "opcoes": ["Ler um arquivo", "Transformar dados Python em texto JSON", "Apagar dados", "Converter texto em número"],
+         "correta": 1, "explicacao": "dumps gera o texto; loads faz o caminho de volta."},
+        {"pergunta": "Ler um arquivo que não existe causa...",
+         "opcoes": ["ValueError", "FileNotFoundError", "IndexError", "Nada"], "correta": 1,
+         "explicacao": "Use try/except FileNotFoundError para tratar esse caso."},
+    ],
+    "desafios": [
+        {
+            "titulo": "Leitor de diário",
+            "enunciado": "O arquivo 'diario.txt' já existe na pasta. Leia-o com pathlib e mostre:\n\nO diário tem <n> linhas.\n\n"
+                         "e depois cada linha precedida de '- '.",
+            "inicial": "from pathlib import Path\n\n",
+            "dica": "linhas = Path('diario.txt').read_text().splitlines()",
+            "solucao": "from pathlib import Path\n\nlinhas = Path('diario.txt').read_text().splitlines()\n"
+                       "print(f\"O diário tem {len(linhas)} linhas.\")\nfor linha in linhas:\n    print(f\"- {linha}\")",
+            "casos": [caso([saida(_diario(t))], {"__arquivos__": {"diario.txt": t}}) for t in [
+                "Hoje aprendi dicionários.\nAmanhã vou estudar classes.\nPython é demais!\n",
+                "Dia 1: comecei o PyQuest.\n"]],
+        },
+        {
+            "titulo": "Livro de visitas",
+            "enunciado": "Peça nomes com input() até a pessoa digitar 'sair'. Para cada visitante, mostre 'Obrigado, <nome>!'. "
+                         "No fim, grave todos os nomes no arquivo 'visitas.txt', um por linha.",
+            "inicial": "from pathlib import Path\n\n",
+            "dica": "Guarde os nomes numa lista e depois monte o texto com nome + '\\n' para cada um.",
+            "solucao": "from pathlib import Path\n\nnomes = []\nwhile True:\n    nome = input(\"Seu nome (ou 'sair'): \")\n"
+                       "    if nome == 'sair':\n        break\n    print(f\"Obrigado, {nome}!\")\n    nomes.append(nome)\n\n"
+                       "texto = ''\nfor nome in nomes:\n    texto += nome + '\\n'\nPath('visitas.txt').write_text(texto)",
+            "casos": [caso([saida("\n".join(f"Obrigado, {x}!" for x in e[:-1]), flex=True),
+                            arquivo_igual("visitas.txt", "\n".join(e[:-1]))], entradas(*e))
+                      for e in [["Ana", "Beto", "sair"], ["Carla", "sair"]]],
+        },
+        {
+            "titulo": "Calculadora à prova de erros",
+            "enunciado": "Leia dois números com input(). Se os dois forem inteiros válidos, mostre 'Soma: <resultado>'. "
+                         "Se algum não for número, mostre 'Digite apenas números!' (use try/except ValueError).",
+            "inicial": "",
+            "dica": "Coloque as duas conversões com int() dentro do try.",
+            "solucao": "a = input(\"Primeiro número: \")\nb = input(\"Segundo número: \")\ntry:\n    soma = int(a) + int(b)\n"
+                       "except ValueError:\n    print(\"Digite apenas números!\")\nelse:\n    print(f\"Soma: {soma}\")",
+            "casos": [caso([saida(r, flex=True), tem("except")], entradas(a, b)) for a, b, r in [
+                ("3", "4", "Soma: 7"), ("3", "abc", "Digite apenas números!"), ("x", "2", "Digite apenas números!"),
+                ("-5", "10", "Soma: 5")]],
+        },
+        {
+            "titulo": "Gatos e cachorros",
+            "enunciado": "Tente ler os arquivos 'gatos.txt' e 'cachorros.txt', nessa ordem. Para cada um que existir, mostre o "
+                         "conteúdo (sem a linha em branco do fim). Se não existir, mostre 'Arquivo <nome> não encontrado.' e continue.",
+            "inicial": "from pathlib import Path\n\n",
+            "dica": "for nome in ['gatos.txt', 'cachorros.txt']: e um try/except FileNotFoundError dentro do laço.",
+            "solucao": "from pathlib import Path\n\nfor nome in ['gatos.txt', 'cachorros.txt']:\n    try:\n"
+                       "        conteudo = Path(nome).read_text()\n    except FileNotFoundError:\n"
+                       "        print(f\"Arquivo {nome} não encontrado.\")\n    else:\n        print(conteudo.rstrip())",
+            "casos": [caso([saida(_gatos(a))], {"__arquivos__": a}) for a in [
+                {"gatos.txt": "mimi\nfrajola\n", "cachorros.txt": "rex\nbidu\n"},
+                {"cachorros.txt": "pluto\n"}, {}]],
+        },
+        {
+            "titulo": "Número favorito",
+            "enunciado": "Peça o número favorito com input(), converta para int e salve no arquivo 'favorito.json' usando "
+                         "json.dumps. Depois LEIA o arquivo de volta com json.loads e mostre:\n\nSeu número favorito é <n>.",
+            "inicial": "import json\nfrom pathlib import Path\n\n",
+            "dica": "path = Path('favorito.json'); path.write_text(json.dumps(numero)); lido = json.loads(path.read_text())",
+            "solucao": "import json\nfrom pathlib import Path\n\nnumero = int(input(\"Seu número favorito: \"))\npath = Path('favorito.json')\n"
+                       "path.write_text(json.dumps(numero))\n\nlido = json.loads(path.read_text())\n"
+                       "print(f\"Seu número favorito é {lido}.\")",
+            "casos": [caso([arquivo_json("favorito.json", int(n)), saida(f"Seu número favorito é {n}.", flex=True),
+                            tem("json.loads")], entradas(n)) for n in ["7", "42"]],
+        },
+        {
+            "titulo": "Caça-bugs: divisão perigosa",
+            "enunciado": "Quando o divisor é 0, este programa quebra. Use try/except para mostrar 'Não dá para dividir por zero.' "
+                         "nesse caso. Nos outros, mostre o resultado normalmente.",
+            "inicial": "a = int(input(\"Dividendo: \"))\nb = int(input(\"Divisor: \"))\nprint(a / b)\n",
+            "dica": "try: print(a / b) except ZeroDivisionError: ...",
+            "solucao": "a = int(input(\"Dividendo: \"))\nb = int(input(\"Divisor: \"))\ntry:\n    print(a / b)\n"
+                       "except ZeroDivisionError:\n    print(\"Não dá para dividir por zero.\")",
+            "casos": [caso([saida("5.0")], entradas("10", "2")),
+                      caso([saida("Não dá para dividir por zero.", flex=True), tem("except")], entradas("7", "0"))],
+        },
+    ],
+    "chefe": {
+        "titulo": "O Arquivista",
+        "enunciado": "O arquivo 'notas.txt' tem uma linha por aluno, no formato nome,nota. Algumas notas estão quebradas (ex.: 'beto,dez').\n"
+                     "1. Leia o arquivo. Para separar nome e nota, use nome, nota = linha.split(',').\n"
+                     "2. Converta cada nota com float(). Ignore as linhas inválidas, mas conte quantas foram (use try/except).\n"
+                     "3. Salve em 'relatorio.json' um dicionário com: 'media' (média das notas válidas, com round(..., 1)), "
+                     "'aprovados' (nomes com nota >= 6, em ordem alfabética) e 'invalidas' (quantidade de linhas inválidas).\n"
+                     "4. Mostre: Média da turma: <media>",
+        "inicial": "import json\nfrom pathlib import Path\n\n",
+        "dica": "Guarde as notas válidas num dicionário {nome: nota}. Depois calcule a média com sum(...) / len(...).",
+        "solucao": "import json\nfrom pathlib import Path\n\nnotas = {}\ninvalidas = 0\nfor linha in Path('notas.txt').read_text().splitlines():\n"
+                   "    nome, nota = linha.split(',')\n    try:\n        notas[nome] = float(nota)\n    except ValueError:\n"
+                   "        invalidas += 1\n\nmedia = round(sum(notas.values()) / len(notas), 1)\naprovados = []\n"
+                   "for nome, nota in notas.items():\n    if nota >= 6:\n        aprovados.append(nome)\naprovados.sort()\n\n"
+                   "relatorio = {'media': media, 'aprovados': aprovados, 'invalidas': invalidas}\n"
+                   "Path('relatorio.json').write_text(json.dumps(relatorio))\nprint(f\"Média da turma: {media}\")",
+        "casos": [caso([arquivo_json("relatorio.json", _arquivista(t)), saida(f"Média da turma: {_arquivista(t)['media']}", flex=True),
+                        tem("except")], {"__arquivos__": {"notas.txt": t}}) for t in [_NOTAS1, _NOTAS2]],
+    },
+}
+
+# ---------------------------------------------------------------------------
+# CAPÍTULO 11: Testando o código
+# ---------------------------------------------------------------------------
+
+class _FuncPadraoErrado:
+    def __init__(self, nome, salario):
+        self.nome = nome
+        self.salario = salario
+
+    def dar_aumento(self, valor=50):
+        self.salario += valor
+
+
+class _FuncIgnoraValor:
+    def __init__(self, nome, salario):
+        self.nome = nome
+        self.salario = salario
+
+    def dar_aumento(self, valor=500):
+        self.salario += 500
+
+
+def _senha_ref(senha, ignorar=None):
+    problemas = []
+    if len(senha) < 8 and ignorar != "curta":
+        problemas.append("curta")
+    if not any(c.isdigit() for c in senha) and ignorar != "numero":
+        problemas.append("sem número")
+    if not any(c.isupper() for c in senha) and ignorar != "maiuscula":
+        problemas.append("sem maiúscula")
+    return problemas
+
+
+CAP11 = {
+    "num": 11,
+    "titulo": "Testando o código",
+    "subtitulo": "assert, funções de teste e pytest",
+    "licoes": [
+        {
+            "titulo": "Por que testar?",
+            "texto": [
+                "Testes automáticos conferem se o seu código faz o que deveria. Quando você muda algo, eles avisam se "
+                "quebrou o que já funcionava.",
+                "O jeito mais simples de testar é o `assert`: `assert condição`. Se a condição for falsa, o Python lança `AssertionError`.",
+                "Um bom teste chama o código com uma entrada conhecida e confere o resultado: `assert dobro(4) == 8`.",
+            ],
+            "exemplo": "def formatar_nome(primeiro, ultimo):\n    return f\"{primeiro} {ultimo}\".title()\n\n"
+                       "assert formatar_nome('janis', 'joplin') == 'Janis Joplin'\nprint(\"Primeiro teste passou!\")\n\n"
+                       "assert formatar_nome('ada', 'lovelace') == 'Ada lovelace'\nprint(\"Esta linha nunca aparece.\")",
+        },
+        {
+            "titulo": "Funções de teste e pytest",
+            "texto": [
+                "Os testes ficam organizados em funções cujo nome começa com `test_`. Cada função testa um comportamento.",
+                "No seu computador, a ferramenta **pytest** encontra e roda essas funções sozinha: instale com `pip install pytest`, "
+                "salve os testes num arquivo como `test_nomes.py` e rode `pytest` no terminal.",
+                "Aqui no PyQuest, o verificador faz o papel do pytest: ele roda todas as suas funções `test_...` e ainda tenta "
+                "enganá-las com versões do código que têm bugs, para ver se os seus testes percebem!",
+                "## Teste que falha também ajuda",
+                "Quando um teste falha, leia a mensagem: ela mostra o que era esperado. Conserte o **código**, "
+                "a menos que o próprio teste esteja errado.",
+            ],
+            "exemplo": "def formatar_nome(primeiro, ultimo, meio=''):\n    if meio:\n        completo = f\"{primeiro} {meio} {ultimo}\"\n"
+                       "    else:\n        completo = f\"{primeiro} {ultimo}\"\n    return completo.title()\n\n\n"
+                       "def test_primeiro_ultimo():\n    assert formatar_nome('janis', 'joplin') == 'Janis Joplin'\n\n\n"
+                       "def test_com_nome_do_meio():\n    assert formatar_nome('wolfgang', 'mozart', 'amadeus') == 'Wolfgang Amadeus Mozart'\n\n\n"
+                       "# Rodando os testes \"na mão\", como o pytest faria:\ntest_primeiro_ultimo()\ntest_com_nome_do_meio()\n"
+                       "print(\"2 testes passaram!\")",
+        },
+        {
+            "titulo": "Testando classes",
+            "texto": [
+                "Para testar uma classe, crie uma instância e confira os atributos e os resultados dos métodos.",
+                "Quando vários testes precisam do mesmo objeto, o pytest oferece **fixtures**: uma função marcada com "
+                "`@pytest.fixture` que cria o objeto e é passada aos testes como parâmetro. Aqui você pode simplesmente "
+                "criar o objeto dentro de cada teste.",
+                "Teste também os **casos-limite**: lista vazia, zero, valores negativos. É onde os bugs se escondem!",
+            ],
+            "exemplo": "class Pesquisa:\n    def __init__(self, pergunta):\n        self.pergunta = pergunta\n        self.respostas = []\n\n"
+                       "    def guardar(self, resposta):\n        self.respostas.append(resposta)\n\n\n"
+                       "def test_guarda_uma_resposta():\n    p = Pesquisa('Qual sua linguagem favorita?')\n    p.guardar('python')\n"
+                       "    assert 'python' in p.respostas\n\n\ndef test_guarda_tres_respostas():\n"
+                       "    p = Pesquisa('Qual sua linguagem favorita?')\n    for r in ['python', 'c', 'rust']:\n        p.guardar(r)\n"
+                       "    assert len(p.respostas) == 3\n\n\ntest_guarda_uma_resposta()\ntest_guarda_tres_respostas()\n"
+                       "print(\"Pesquisa testada com sucesso!\")",
+        },
+    ],
+    "quiz": [
+        {"pergunta": "O que acontece quando um `assert` falha?",
+         "opcoes": ["Nada", "O Python lança AssertionError", "Mostra False e continua", "O arquivo é apagado"], "correta": 1,
+         "explicacao": "Um assert falso interrompe o programa com AssertionError."},
+        {"pergunta": "Como o pytest reconhece uma função de teste?",
+         "opcoes": ["Pelo nome começando com test_", "Por ter assert", "Por estar no fim do arquivo", "Por ter return True"],
+         "correta": 0, "explicacao": "O pytest procura funções (e arquivos) cujo nome começa com test_."},
+        {"pergunta": "Qual é um bom teste para `dobro(n)`?",
+         "opcoes": ["assert dobro", "assert dobro(4) == 8", "print(dobro(4))", "dobro(4) == 8 (sem assert)"], "correta": 1,
+         "explicacao": "O teste chama a função com uma entrada conhecida e confere o resultado com assert."},
+        {"pergunta": "Um teste falhou. O que fazer primeiro?",
+         "opcoes": ["Apagar o teste", "Ler a mensagem e descobrir se o erro está no código ou no teste",
+                    "Rodar de novo até passar", "Trocar assert por print"], "correta": 1,
+         "explicacao": "A mensagem de falha mostra o que era esperado e o que veio."},
+        {"pergunta": "Para que serve uma fixture no pytest?",
+         "opcoes": ["Criar objetos reutilizáveis pelos testes", "Corrigir bugs sozinha", "Instalar o pytest", "Mostrar gráficos"],
+         "correta": 0, "explicacao": "Fixtures preparam dados ou objetos usados por vários testes."},
+        {"pergunta": "Qual comando roda os testes no terminal?",
+         "opcoes": ["python test", "pytest", "run tests", "pip test"], "correta": 1,
+         "explicacao": "Com o pytest instalado, basta rodar pytest na pasta do projeto."},
+        {"pergunta": "Por que testar casos-limite (lista vazia, zero...)?",
+         "opcoes": ["Porque é obrigatório", "Porque é onde os bugs costumam se esconder", "Para o código ficar mais rápido", "Não é recomendado"],
+         "correta": 1, "explicacao": "Os extremos costumam revelar erros que os casos comuns escondem."},
+    ],
+    "desafios": [
+        {
+            "titulo": "Primeiro teste",
+            "enunciado": "A função `cidade_pais` já está pronta. Escreva a função de teste `test_cidade_pais()` que confere, com "
+                         "assert, que cidade_pais('santiago', 'chile') devolve 'Santiago, Chile'.\n\n"
+                         "O verificador vai trocar a função por versões com bug para ver se o seu teste percebe!",
+            "inicial": "def cidade_pais(cidade, pais):\n    return f\"{cidade}, {pais}\".title()\n\n\n# Escreva seu teste abaixo\n",
+            "dica": "def test_cidade_pais():\n    assert cidade_pais('santiago', 'chile') == 'Santiago, Chile'",
+            "solucao": "def cidade_pais(cidade, pais):\n    return f\"{cidade}, {pais}\".title()\n\n\n"
+                       "def test_cidade_pais():\n    assert cidade_pais('santiago', 'chile') == 'Santiago, Chile'",
+            "casos": [caso([
+                min_testes(1), testes_passam(),
+                testes_pegam("cidade_pais", lambda c, p: f"{c}, {p}", "a função esqueceu das maiúsculas"),
+                testes_pegam("cidade_pais", lambda c, p: f"{p}, {c}".title(), "a função trocou a ordem de cidade e país")])],
+        },
+        {
+            "titulo": "Testando a população",
+            "enunciado": "Melhore `cidade_pais(cidade, pais, populacao=None)`: quando a população for informada, ela devolve "
+                         "'Santiago, Chile - população 5000000'. Depois escreva dois testes:\n"
+                         "• test_cidade_pais (sem população)\n• test_cidade_pais_populacao (com população)",
+            "inicial": "def cidade_pais(cidade, pais):\n    return f\"{cidade}, {pais}\".title()\n\n\n# Escreva seus testes abaixo\n",
+            "dica": "Monte o texto com title() e, se populacao, acrescente f\" - população {populacao}\".",
+            "solucao": "def cidade_pais(cidade, pais, populacao=None):\n    texto = f\"{cidade}, {pais}\".title()\n    if populacao:\n"
+                       "        texto += f\" - população {populacao}\"\n    return texto\n\n\n"
+                       "def test_cidade_pais():\n    assert cidade_pais('santiago', 'chile') == 'Santiago, Chile'\n\n\n"
+                       "def test_cidade_pais_populacao():\n"
+                       "    assert cidade_pais('santiago', 'chile', 5000000) == 'Santiago, Chile - população 5000000'",
+            "casos": [caso([
+                chama("cidade_pais", ["lima", "peru"], "Lima, Peru"),
+                chama("cidade_pais", ["lima", "peru", 10000000], "Lima, Peru - população 10000000"),
+                regra(lambda o, n, c: callable(n.get("test_cidade_pais")) and callable(n.get("test_cidade_pais_populacao")),
+                      "Escreva as funções test_cidade_pais e test_cidade_pais_populacao."),
+                testes_passam(),
+                testes_pegam("cidade_pais", lambda c, p, populacao=None: f"{c}, {p}".title(), "a população foi ignorada"),
+                testes_pegam("cidade_pais", lambda c, p, populacao=None: f"{c}, {p}".title() + (f" ({populacao})" if populacao else ""),
+                             "a população saiu no formato errado")])],
+        },
+        {
+            "titulo": "Os testes acusam",
+            "enunciado": "A função `eh_bissexto(ano)` tem um bug, e os testes mostram isso. Rode, leia o erro e conserte a FUNÇÃO "
+                         "(não mexa nos testes).\n\nRegra: um ano é bissexto se for divisível por 4, exceto os divisíveis por 100, "
+                         "a não ser que também sejam divisíveis por 400.",
+            "inicial": "def eh_bissexto(ano):\n    return ano % 4 == 0\n\n\ndef test_comum():\n    assert eh_bissexto(2023) == False\n\n\n"
+                       "def test_divisivel_por_4():\n    assert eh_bissexto(2024) == True\n\n\ndef test_seculo():\n"
+                       "    assert eh_bissexto(1900) == False\n\n\ndef test_divisivel_por_400():\n    assert eh_bissexto(2000) == True\n\n\n"
+                       "test_comum()\ntest_divisivel_por_4()\ntest_seculo()\ntest_divisivel_por_400()\nprint(\"Todos os testes passaram!\")\n",
+            "dica": "Divisível por 400 → True. Senão, divisível por 100 → False. Senão, divisível por 4 → True.",
+            "solucao": "def eh_bissexto(ano):\n    if ano % 400 == 0:\n        return True\n    if ano % 100 == 0:\n        return False\n"
+                       "    return ano % 4 == 0\n\n\ndef test_comum():\n    assert eh_bissexto(2023) == False\n\n\n"
+                       "def test_divisivel_por_4():\n    assert eh_bissexto(2024) == True\n\n\ndef test_seculo():\n"
+                       "    assert eh_bissexto(1900) == False\n\n\ndef test_divisivel_por_400():\n    assert eh_bissexto(2000) == True\n\n\n"
+                       "test_comum()\ntest_divisivel_por_4()\ntest_seculo()\ntest_divisivel_por_400()\nprint(\"Todos os testes passaram!\")",
+            "casos": [caso([saida("Todos os testes passaram!"), min_testes(4),
+                            chama("eh_bissexto", [2100], False), chama("eh_bissexto", [2400], True),
+                            chama("eh_bissexto", [1996], True), chama("eh_bissexto", [2019], False)])],
+        },
+        {
+            "titulo": "Testando o funcionário",
+            "enunciado": "A classe `Funcionario` já existe. Escreva dois testes:\n"
+                         "• test_aumento_padrao: um funcionário com salário 3000 recebe dar_aumento() e fica com 3500\n"
+                         "• test_aumento_personalizado: com salário 3000, dar_aumento(1000) deixa 4000",
+            "inicial": "class Funcionario:\n    def __init__(self, nome, salario):\n        self.nome = nome\n        self.salario = salario\n\n"
+                       "    def dar_aumento(self, valor=500):\n        self.salario += valor\n\n\n# Escreva seus testes abaixo\n",
+            "dica": "Dentro do teste: f = Funcionario('ana', 3000); f.dar_aumento(); assert f.salario == 3500",
+            "solucao": "class Funcionario:\n    def __init__(self, nome, salario):\n        self.nome = nome\n        self.salario = salario\n\n"
+                       "    def dar_aumento(self, valor=500):\n        self.salario += valor\n\n\n"
+                       "def test_aumento_padrao():\n    f = Funcionario('ana', 3000)\n    f.dar_aumento()\n    assert f.salario == 3500\n\n\n"
+                       "def test_aumento_personalizado():\n    f = Funcionario('beto', 3000)\n    f.dar_aumento(1000)\n    assert f.salario == 4000",
+            "casos": [caso([min_testes(2), testes_passam(),
+                            testes_pegam("Funcionario", _FuncPadraoErrado, "o aumento padrão estava errado"),
+                            testes_pegam("Funcionario", _FuncIgnoraValor, "o valor do aumento personalizado era ignorado")])],
+        },
+        {
+            "titulo": "Caça-bugs: o teste errado",
+            "enunciado": "Aqui a FUNÇÃO está certa, mas o TESTE está errado e falha. Conserte o teste para conferir o "
+                         "comportamento correto: media([2, 4, 9]) é 5.0.",
+            "inicial": "def media(numeros):\n    return sum(numeros) / len(numeros)\n\n\ndef test_media():\n"
+                       "    assert media([2, 4, 9]) == 15\n\n\ntest_media()\nprint(\"Teste passou!\")\n",
+            "dica": "Calcule de cabeça: (2 + 4 + 9) / 3.",
+            "solucao": "def media(numeros):\n    return sum(numeros) / len(numeros)\n\n\ndef test_media():\n"
+                       "    assert media([2, 4, 9]) == 5.0\n\n\ntest_media()\nprint(\"Teste passou!\")",
+            "casos": [caso([saida("Teste passou!"), testes_passam(), chama("media", [[2, 4, 9]], 5.0,
+                                                                          msg="Não mude a função media: ela já estava certa."),
+                            testes_pegam("media", lambda nums: sum(nums), "a função esqueceu de dividir")])],
+        },
+    ],
+    "chefe": {
+        "titulo": "O Juiz dos Testes",
+        "enunciado": "Crie `validar_senha(senha)` que devolve uma LISTA com os problemas encontrados, nesta ordem "
+                     "(lista vazia = senha boa):\n"
+                     "• 'curta' se tiver menos de 8 caracteres\n"
+                     "• 'sem número' se não tiver nenhum dígito\n"
+                     "• 'sem maiúscula' se não tiver nenhuma letra maiúscula\n\n"
+                     "Depois escreva pelo menos 3 testes test_... O Juiz vai rodar os seus testes contra 3 versões com bug, "
+                     "e eles precisam pegar todas!",
+        "inicial": "def validar_senha(senha):\n    pass\n\n\n# Escreva seus testes abaixo\n",
+        "dica": "Percorra a senha com for: c.isdigit() diz se é número e c.isupper() se é maiúscula. "
+                "Faça um teste para cada regra.",
+        "solucao": "def validar_senha(senha):\n    problemas = []\n    if len(senha) < 8:\n        problemas.append('curta')\n"
+                   "    tem_numero = False\n    tem_maiuscula = False\n    for c in senha:\n        if c.isdigit():\n"
+                   "            tem_numero = True\n        if c.isupper():\n            tem_maiuscula = True\n    if not tem_numero:\n"
+                   "        problemas.append('sem número')\n    if not tem_maiuscula:\n        problemas.append('sem maiúscula')\n"
+                   "    return problemas\n\n\ndef test_senha_boa():\n    assert validar_senha('Python2026') == []\n\n\n"
+                   "def test_senha_curta():\n    assert validar_senha('Py1') == ['curta']\n\n\n"
+                   "def test_sem_numero():\n    assert validar_senha('PythonLegal') == ['sem número']\n\n\n"
+                   "def test_sem_maiuscula():\n    assert validar_senha('python2026') == ['sem maiúscula']",
+        "casos": [caso([
+            chama("validar_senha", ["Python2026"], []),
+            chama("validar_senha", ["abc"], ["curta", "sem número", "sem maiúscula"]),
+            chama("validar_senha", ["SenhaForte"], ["sem número"]),
+            chama("validar_senha", ["Ab1"], ["curta"]),
+            chama("validar_senha", ["12345678"], ["sem maiúscula"]),
+            min_testes(3), testes_passam(),
+            testes_pegam("validar_senha", lambda s: _senha_ref(s, "curta"), "a versão com bug não checava o tamanho"),
+            testes_pegam("validar_senha", lambda s: _senha_ref(s, "numero"), "a versão com bug não checava os números"),
+            testes_pegam("validar_senha", lambda s: _senha_ref(s, "maiuscula"), "a versão com bug não checava as maiúsculas")])],
+    },
+}
+
+CAPITULOS = [CAP1, CAP2, CAP3, CAP4, CAP5, CAP6, CAP7, CAP8, CAP9, CAP10, CAP11]
