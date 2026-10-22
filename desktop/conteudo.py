@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Conteúdo do PyQuest: lições, quizzes e desafios dos capítulos 1 a 11,
+Conteúdo do PyQuest: lições, quizzes e desafios dos capítulos 1 a 14,
 seguindo a sequência de temas do livro "Curso Intensivo de Python" (Eric Matthes).
 Os textos e exercícios são originais, criados para este app.
 """
@@ -2337,4 +2337,1890 @@ CAP11 = {
     },
 }
 
-CAPITULOS = [CAP1, CAP2, CAP3, CAP4, CAP5, CAP6, CAP7, CAP8, CAP9, CAP10, CAP11]
+# ---------------------------------------------------------------------------
+# PARTE II: PROJETO ALIEN INVASION (capítulos 12 a 14)
+# Usa o "pygame de treino" do motor: Rect, Sprite, Group, eventos e constantes,
+# sem janela. O aluno pratica a lógica; no PC, o mesmo código roda no pygame real.
+# ---------------------------------------------------------------------------
+
+def _c(s):
+    """Tira a quebra de linha do começo e do fim de um bloco de código."""
+    return s.strip("\n")
+
+
+def _pg():
+    import sys
+    return sys.modules["pygame"]
+
+
+def _ev(tipo, tecla):
+    pg = _pg()
+    return pg.event.Event(getattr(pg, tipo), key=getattr(pg, tecla))
+
+
+def _sprite_simples(x, y, w=10, h=10):
+    pg = _pg()
+
+    class Coisa(pg.sprite.Sprite):
+        def __init__(self):
+            super().__init__()
+            self.rect = pg.Rect(x, y, w, h)
+    return Coisa()
+
+
+class _Cfg:
+    """Objeto de configurações genérico usado nos testes."""
+
+    def __init__(self, **k):
+        self.__dict__.update(k)
+
+
+# ----------------------------- testes do cap. 12 -----------------------------
+
+_SETTINGS_12 = {
+    "screen_width": 1200, "screen_height": 800, "bg_color": (230, 230, 230),
+    "ship_speed": 1.5, "bullet_speed": 2.0, "bullet_width": 3, "bullet_height": 15,
+    "bullet_color": (60, 60, 60), "bullets_allowed": 3,
+}
+
+
+def _teste_settings(ns):
+    s = ns["Settings"]()
+    return all(getattr(s, k, None) == v for k, v in _SETTINGS_12.items())
+
+
+def _teste_posicionar(ns):
+    R = _pg().Rect
+    f = ns["posicionar_nave"]
+    a = R(0, 0, 60, 48)
+    r1 = f(R(0, 0, 1200, 800), a)
+    b = R(5, 5, 40, 30)
+    r2 = f(R(0, 0, 800, 600), b)
+    return (a.topleft == (570, 752) and r1 is a and b.topleft == (380, 570) and r2 is b)
+
+
+def _teste_foguete(ns):
+    R = _pg().Rect
+    tela = R(0, 0, 300, 200)
+    n = ns["Ship"](_Cfg(ship_speed=2.5), tela)
+    if n.rect.size != (60, 48) or n.rect.midbottom != (150, 200):
+        return False
+    if any(getattr(n, f, None) is not False for f in ("moving_right", "moving_left", "moving_up", "moving_down")):
+        return False
+    n.update()
+    if n.rect.topleft != (120, 152):
+        return False
+    n.moving_up = True
+    for _ in range(4):
+        n.update()
+    if n.rect.y != 142 or n.y != 142.0:
+        return False
+    for _ in range(200):
+        n.update()
+    if n.rect.top < -3 or n.rect.top > 0:
+        return False
+    n.moving_up = False
+    n.moving_right = True
+    for _ in range(200):
+        n.update()
+    if n.rect.right < 300 or n.rect.right > 303:
+        return False
+    n.moving_right = False
+    n.moving_down = True
+    for _ in range(200):
+        n.update()
+    if n.rect.bottom < 200 or n.rect.bottom > 203:
+        return False
+    n.moving_down = False
+    n.moving_left = True
+    for _ in range(300):
+        n.update()
+    return -3 <= n.rect.left <= 0
+
+
+def _teste_teclas(ns):
+    f, Nave = ns["checar_teclas"], ns["Nave"]
+    n = Nave()
+    f(_ev("KEYDOWN", "K_RIGHT"), n)
+    if n.moving_right is not True or n.moving_left is not False:
+        return False
+    f(_ev("KEYDOWN", "K_LEFT"), n)
+    if n.moving_left is not True:
+        return False
+    f(_ev("KEYUP", "K_RIGHT"), n)
+    if n.moving_right is not False or n.moving_left is not True:
+        return False
+    f(_ev("KEYUP", "K_LEFT"), n)
+    if n.moving_left is not False:
+        return False
+    f(_ev("KEYDOWN", "K_SPACE"), n)
+    return n.moving_right is False and n.moving_left is False
+
+
+def _teste_bala(ns):
+    pg = _pg()
+    B = ns["Bullet"]
+    if not issubclass(B, pg.sprite.Sprite):
+        return False
+    cfg = _Cfg(bullet_width=3, bullet_height=15, bullet_speed=2.0)
+    b = B(cfg, pg.Rect(570, 752, 60, 48))
+    if b.rect.size != (3, 15) or b.rect.midtop != (600, 752):
+        return False
+    g = pg.sprite.Group(b)
+    g.update()
+    g.update()
+    if b.rect.y != 748 or b.y != 748.0:
+        return False
+    b2 = B(_Cfg(bullet_width=5, bullet_height=10, bullet_speed=0.5), pg.Rect(0, 100, 20, 20))
+    for _ in range(3):
+        b2.update()
+    return b2.rect.size == (5, 10) and b2.rect.midtop == (10, 98) and b2.y == 98.5
+
+
+def _teste_hangar(ns):
+    pg = _pg()
+    disparar, atualizar = ns["disparar"], ns["atualizar_balas"]
+    cfg = ns["Settings"]()
+    nave = pg.Rect(570, 752, 60, 48)
+    balas = pg.sprite.Group()
+    res = [disparar(balas, cfg, nave) for _ in range(5)]
+    if res != [True, True, True, False, False] or len(balas) != 3:
+        return False
+    for _ in range(100):
+        atualizar(balas)
+    if len(balas) != 3:
+        return False
+    for _ in range(300):
+        atualizar(balas)
+    if len(balas) != 0:
+        return False
+    if disparar(balas, cfg, nave) is not True or len(balas) != 1:
+        return False
+    # bala que acabou de sair pelo topo some, as outras ficam
+    b = next(iter(balas))
+    b.y = -14.0
+    b.rect.y = -14
+    disparar(balas, cfg, nave)
+    atualizar(balas)
+    return len(balas) == 1
+
+
+# ----------------------------- testes do cap. 13 -----------------------------
+
+def _frota_ref(lt, at, la, aa):
+    pos = []
+    x, y = la, aa
+    while y < at - 3 * aa:
+        while x < lt - 2 * la:
+            pos.append((x, y))
+            x += 2 * la
+        x = la
+        y += 2 * aa
+    return pos
+
+
+def _teste_frota(ns):
+    f = ns["posicoes_frota"]
+    for args in [(600, 400, 60, 50), (1200, 800, 60, 58), (500, 300, 100, 40), (200, 200, 90, 60)]:
+        r = f(*args)
+        if [tuple(p) for p in (r or [])] != _frota_ref(*args):
+            return False
+    return True
+
+
+def _teste_bordas(ns):
+    pg = _pg()
+    A = ns["Alien"]
+    tela = pg.Rect(0, 0, 400, 300)
+    a = A(100, 20)
+    if not isinstance(a, pg.sprite.Sprite) or a.rect.topleft != (100, 20) or a.rect.size != (60, 50):
+        return False
+    if a.x != 100.0 or a.check_edges(tela) is not False:
+        return False
+    return (A(340, 0).check_edges(tela) is True and A(0, 0).check_edges(tela) is True
+            and A(339, 0).check_edges(tela) is False and A(1, 0).check_edges(tela) is False
+            and A(350, 0).check_edges(tela) is True)
+
+
+def _teste_meia_volta(ns):
+    pg = _pg()
+    f = ns["mudar_direcao"]
+    cfg = _Cfg(fleet_drop_speed=10, fleet_direction=1)
+    aliens = pg.sprite.Group(_sprite_simples(0, 50), _sprite_simples(100, 50), _sprite_simples(0, 150))
+    f(aliens, cfg)
+    if cfg.fleet_direction != -1 or sorted(a.rect.y for a in aliens) != [60, 60, 160]:
+        return False
+    cfg.fleet_drop_speed = 25
+    f(aliens, cfg)
+    return cfg.fleet_direction == 1 and sorted(a.rect.y for a in aliens) == [85, 85, 185]
+
+
+def _teste_colisoes(ns):
+    pg = _pg()
+    f = ns["checar_colisoes"]
+    balas = pg.sprite.Group(_sprite_simples(10, 10, 3, 15), _sprite_simples(500, 500, 3, 15),
+                            _sprite_simples(205, 100, 3, 15))
+    aliens = pg.sprite.Group(_sprite_simples(0, 0, 60, 50), _sprite_simples(200, 100, 60, 50),
+                             _sprite_simples(150, 90, 60, 50), _sprite_simples(800, 0, 60, 50))
+    n = f(balas, aliens)
+    if n != 3 or len(balas) != 1 or len(aliens) != 1:
+        return False
+    return f(pg.sprite.Group(), aliens) == 0 and len(aliens) == 1
+
+
+def _teste_stats13(ns):
+    G = ns["GameStats"]
+    cfg = _Cfg(ship_limit=3)
+    s = G(cfg)
+    if s.ships_left != 3 or s.game_active is not True:
+        return False
+    s.ships_left = 0
+    cfg.ship_limit = 5
+    s.reset_stats()
+    return s.ships_left == 5
+
+
+def _teste_invasao(ns):
+    pg = _pg()
+    S, A, G = ns["Settings"], ns["Alien"], ns["GameStats"]
+    atualizar, atingida, chao = ns["atualizar_frota"], ns["nave_atingida"], ns["aliens_no_chao"]
+    cfg = S()
+    tela = pg.Rect(0, 0, 400, 300)
+    aliens = pg.sprite.Group(A(cfg, 100, 20), A(cfg, 300, 20), A(cfg, 100, 100))
+    for _ in range(39):
+        atualizar(aliens, cfg, tela)
+    if cfg.fleet_direction != 1 or sorted(a.rect.x for a in aliens) != [139, 139, 339]:
+        return False
+    atualizar(aliens, cfg, tela)          # chega na borda (right = 400)
+    atualizar(aliens, cfg, tela)          # vira, desce e anda para a esquerda
+    if cfg.fleet_direction != -1 or sorted(a.rect.y for a in aliens) != [30, 30, 110]:
+        return False
+    if sorted(a.rect.x for a in aliens) != [139, 139, 339]:
+        return False
+    if chao(aliens, tela) is not False:
+        return False
+    aliens.add(A(cfg, 0, 250))
+    if chao(aliens, tela) is not True:
+        return False
+    stats = G(cfg)
+    balas = pg.sprite.Group(_sprite_simples(0, 0))
+    atingida(stats, aliens, balas)
+    if stats.ships_left != 2 or len(aliens) != 0 or len(balas) != 0 or stats.game_active is not True:
+        return False
+    atingida(stats, aliens, balas)
+    atingida(stats, aliens, balas)
+    if stats.ships_left != 0 or stats.game_active is not True:
+        return False
+    atingida(stats, aliens, balas)
+    return stats.game_active is False and stats.ships_left == 0
+
+
+# ----------------------------- testes do cap. 14 -----------------------------
+
+def _teste_play(ns):
+    R = _pg().Rect
+    f = ns["clicou_play"]
+    b = R(500, 375, 200, 50)
+    return (f(b, (600, 400), False) is True and f(b, (600, 400), True) is False
+            and f(b, (10, 10), False) is False and f(b, (500, 375), False) is True
+            and f(b, (700, 400), False) is False)
+
+
+def _teste_acelerar(ns):
+    s = ns["Settings"]()
+    base = {"ship_speed": 1.5, "bullet_speed": 2.5, "alien_speed": 1.0, "fleet_direction": 1,
+            "alien_points": 50, "speedup_scale": 1.1, "score_scale": 1.5}
+    if any(getattr(s, k, None) != v for k, v in base.items()):
+        return False
+    s.increase_speed()
+    if (round(s.ship_speed, 3), round(s.bullet_speed, 3), round(s.alien_speed, 3), s.alien_points) != (1.65, 2.75, 1.1, 75):
+        return False
+    s.increase_speed()
+    if (round(s.alien_speed, 3), s.alien_points) != (1.21, 112):
+        return False
+    s.fleet_direction = -1
+    s.initialize_dynamic_settings()
+    return (s.ship_speed, s.alien_speed, s.alien_points, s.fleet_direction) == (1.5, 1.0, 50, 1)
+
+
+def _teste_placar(ns):
+    f = ns["formatar_placar"]
+    return (f(12347) == "12.350" and f(0) == "0" and f(1234567) == "1.234.570"
+            and f(998) == "1.000" and f(42) == "40")
+
+
+def _teste_recorde(ns):
+    G = ns["GameStats"]
+    cfg = _Cfg(ship_limit=3)
+    s = G(cfg)
+    if (s.score, s.level, s.ships_left, s.high_score) != (0, 1, 3, 0):
+        return False
+    s.score = 1500
+    s.check_high_score()
+    if s.high_score != 1500:
+        return False
+    s.reset_stats()
+    if s.score != 0 or s.high_score != 1500:
+        return False
+    s.score = 700
+    s.level = 4
+    s.check_high_score()
+    if s.high_score != 1500:
+        return False
+    s.reset_stats()
+    return s.level == 1
+
+
+def _saida_placar(inicial):
+    rec = inicial
+    linhas = [f"Recorde carregado: {rec}"]
+    rec = max(rec, 150)
+    linhas.append(f"Pontos: 150 | Recorde: {rec}")
+    rec = max(rec, 900)
+    linhas.append(f"Pontos: 900 | Recorde: {rec}")
+    linhas.append(f"Nova partida: pontos 0, nível 1, vidas 3, recorde {rec}")
+    return "\n".join(linhas), rec
+
+
+def _casos_placar_eterno():
+    casos = []
+    for arq in ["800", None, "5000"]:
+        esperado, final = _saida_placar(int(arq) if arq else 0)
+        ctx = {"__arquivos__": {"recorde.json": arq}} if arq else {}
+        casos.append(caso([classe("GameStats"), saida(esperado), arquivo_json("recorde.json", final)], ctx))
+    return casos
+
+
+# ---------------------------------------------------------------------------
+# CAPÍTULO 12: Alien Invasion, a nave
+# ---------------------------------------------------------------------------
+
+CAP12 = {
+    "num": 12,
+    "titulo": "Alien Invasion: a Nave",
+    "subtitulo": "Projeto do jogo: Settings, Rect, teclado e tiros",
+    "licoes": [
+        {
+            "titulo": "Planejando o jogo",
+            "texto": [
+                "Começa a Parte II do livro: **projetos**! O primeiro é o **Alien Invasion**: você controla uma nave "
+                "na parte de baixo da tela e atira numa frota de alienígenas que vai descendo.",
+                "O livro usa a biblioteca **pygame**, que abre janelas e desenha imagens. Aqui não há janela, então o "
+                "PyQuest traz um **pygame de treino**: as mesmas peças (`Rect`, `Sprite`, `Group`, eventos e teclas), "
+                "só que sem gráficos. Você treina a **lógica**, que é o coração do jogo. No seu PC, depois de "
+                "`pip install pygame`, o mesmo código ganha imagens.",
+                "## O laço do jogo",
+                "Todo jogo é um `while True:` que roda dezenas de vezes por segundo. Cada volta é um **quadro**, e em cada "
+                "um o jogo faz três coisas: lê os eventos (teclas e mouse), atualiza as posições e redesenha a tela.",
+                "## A classe Settings",
+                "Em vez de espalhar números pelo código, o livro guarda todas as configurações numa classe `Settings`. "
+                "Quer uma nave mais rápida? Você muda em um lugar só.",
+            ],
+            "exemplo": _c('''
+class Settings:
+    """Guarda as configurações do Alien Invasion."""
+
+    def __init__(self):
+        self.screen_width = 1200
+        self.screen_height = 800
+        self.bg_color = (230, 230, 230)
+        self.ship_speed = 1.5
+
+
+settings = Settings()
+print(f"Tela de {settings.screen_width}x{settings.screen_height}")
+
+# Um laço de jogo simulado, com só 3 quadros
+quadro = 0
+while quadro < 3:
+    quadro += 1
+    print(f"Quadro {quadro}: ler eventos -> atualizar -> desenhar")
+'''),
+        },
+        {
+            "titulo": "Rect: tudo é um retângulo",
+            "texto": [
+                "No pygame, cada elemento do jogo (a nave, um tiro, um alienígena e até a tela) é tratado como um "
+                "retângulo, um `Rect`. Assim fica fácil calcular posições e colisões.",
+                "`pygame.Rect(x, y, largura, altura)` cria um retângulo. O ponto (0, 0) é o **canto superior esquerdo** "
+                "da tela, e o `y` cresce **para baixo**.",
+                "Um Rect tem atributos prontos: `left`, `right`, `top`, `bottom`, `centerx`, `centery`, `center`, "
+                "`midtop`, `midbottom`... Mudar qualquer um deles move o retângulo inteiro.",
+                "## Nave no meio, embaixo",
+                "O livro posiciona a nave com `self.rect.midbottom = self.screen_rect.midbottom`: o meio da base da nave "
+                "fica no meio da base da tela.",
+            ],
+            "exemplo": _c('''
+import pygame
+
+tela = pygame.display.set_mode((1200, 800))
+tela_rect = tela.get_rect()
+print("Tela:", tela_rect)
+
+nave = pygame.Rect(0, 0, 60, 48)
+nave.midbottom = tela_rect.midbottom
+print("Nave:", nave)
+print("Esquerda:", nave.left, "| Direita:", nave.right, "| Topo:", nave.top)
+'''),
+        },
+        {
+            "titulo": "Pilotando a nave",
+            "texto": [
+                "Quando o jogador aperta uma tecla, o pygame gera um evento `KEYDOWN`; quando solta, `KEYUP`. "
+                "O `event.key` diz qual foi: `pygame.K_RIGHT`, `pygame.K_LEFT`, `pygame.K_SPACE`...",
+                "Para a nave andar **enquanto** a tecla estiver apertada, o livro usa **flags**: `moving_right = True` "
+                "no KEYDOWN e `False` no KEYUP. O método `update()` confere as flags a cada quadro.",
+                "## Por que self.x?",
+                "Um Rect só guarda números inteiros. Com velocidade 1.5, a parte decimal se perderia. Por isso a nave "
+                "guarda a posição num `self.x` decimal e copia para o retângulo: `self.rect.x = self.x`.",
+                "Para não sair da tela: só anda para a direita se `self.rect.right < self.screen_rect.right`, e para "
+                "a esquerda se `self.rect.left > 0`.",
+            ],
+            "exemplo": _c('''
+import pygame
+
+
+class Settings:
+    def __init__(self):
+        self.ship_speed = 1.5
+
+
+class Ship:
+    def __init__(self, settings, screen_rect):
+        self.settings = settings
+        self.screen_rect = screen_rect
+        self.rect = pygame.Rect(0, 0, 60, 48)
+        self.rect.midbottom = screen_rect.midbottom
+        self.x = float(self.rect.x)
+        self.moving_right = False
+        self.moving_left = False
+
+    def update(self):
+        if self.moving_right and self.rect.right < self.screen_rect.right:
+            self.x += self.settings.ship_speed
+        if self.moving_left and self.rect.left > 0:
+            self.x -= self.settings.ship_speed
+        self.rect.x = self.x
+
+
+nave = Ship(Settings(), pygame.Rect(0, 0, 1200, 800))
+
+evento = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RIGHT)
+if evento.type == pygame.KEYDOWN and evento.key == pygame.K_RIGHT:
+    nave.moving_right = True
+
+for quadro in range(4):
+    nave.update()
+    print(f"Quadro {quadro + 1}: x = {nave.x}  rect.x = {nave.rect.x}")
+'''),
+        },
+        {
+            "titulo": "Fogo! Sprites e grupos",
+            "texto": [
+                "Os tiros herdam da classe `Sprite` do pygame. Sprites podem ser guardados num **grupo** "
+                "(`pygame.sprite.Group`), uma espécie de lista turbinada.",
+                "Com o grupo, `balas.update()` chama o `update()` de **cada** bala de uma vez, e `len(balas)` diz quantas existem.",
+                "Cada `Bullet` nasce no topo da nave (`self.rect.midtop = nave.rect.midtop`) e sobe: o `y` **diminui** a cada quadro.",
+                "## Limpando as balas",
+                "Balas que saem pelo topo continuariam existindo, gastando memória. O livro remove as que têm "
+                "`bullet.rect.bottom <= 0`. Para remover sem bagunçar o laço, percorra uma **cópia**: `for bullet in balas.copy():`.",
+                "E para não virar uma chuva de tiros: só crie uma bala nova se `len(balas) < settings.bullets_allowed`.",
+            ],
+            "exemplo": _c('''
+import pygame
+from pygame.sprite import Sprite
+
+
+class Bullet(Sprite):
+    def __init__(self, nave_rect, velocidade):
+        super().__init__()
+        self.rect = pygame.Rect(0, 0, 3, 15)
+        self.rect.midtop = nave_rect.midtop
+        self.y = float(self.rect.y)
+        self.velocidade = velocidade
+
+    def update(self):
+        self.y -= self.velocidade
+        self.rect.y = self.y
+
+
+nave = pygame.Rect(570, 752, 60, 48)
+balas = pygame.sprite.Group()
+balas.add(Bullet(nave, 300))
+balas.add(Bullet(nave, 200))
+print("Balas:", len(balas))
+
+for quadro in range(3):
+    balas.update()
+    for bala in balas.copy():
+        if bala.rect.bottom <= 0:
+            balas.remove(bala)
+    print(f"Quadro {quadro + 1}: {len(balas)} bala(s) na tela")
+'''),
+        },
+    ],
+    "quiz": [
+        {"pergunta": "Por que o Alien Invasion junta as configurações numa classe Settings?",
+         "opcoes": ["Porque o pygame exige", "Para mudar os valores do jogo num lugar só",
+                    "Para o jogo rodar mais rápido", "Para salvar o recorde"], "correta": 1,
+         "explicacao": "Com tudo em Settings, ajustar velocidade, cores ou tamanhos é mudar uma linha."},
+        {"pergunta": "No pygame, onde fica o ponto (0, 0) da tela?",
+         "opcoes": ["No centro", "No canto inferior esquerdo", "No canto superior esquerdo", "No canto superior direito"],
+         "correta": 2, "explicacao": "A origem é o canto superior esquerdo, e o y cresce para baixo."},
+        {"pergunta": "O que é mostrado?", "codigo": "r = pygame.Rect(100, 50, 40, 20)\nprint(r.right, r.bottom)",
+         "opcoes": ["140 70", "40 20", "100 50", "60 30"], "correta": 0,
+         "explicacao": "right = x + largura (100 + 40) e bottom = y + altura (50 + 20)."},
+        {"pergunta": "Por que a nave guarda a posição em self.x, além do rect?",
+         "opcoes": ["Para guardar o nome da nave", "Porque o Rect só guarda inteiros e a velocidade tem decimais",
+                    "Para desenhar a imagem", "Porque rect.x não existe"], "correta": 1,
+         "explicacao": "self.x acumula os decimais (1.5, 3.0, 4.5...) e o rect recebe a parte inteira."},
+        {"pergunta": "Qual evento acontece quando o jogador SOLTA uma tecla?",
+         "opcoes": ["KEYDOWN", "KEYUP", "QUIT", "MOUSEBUTTONDOWN"], "correta": 1,
+         "explicacao": "KEYDOWN é apertar, KEYUP é soltar."},
+        {"pergunta": "O que `balas.update()` faz quando balas é um Group?",
+         "opcoes": ["Apaga todas as balas", "Chama update() em cada bala do grupo", "Cria uma bala nova", "Nada"],
+         "correta": 1, "explicacao": "O grupo repassa a chamada para cada sprite que ele contém."},
+        {"pergunta": "Por que o laço que remove balas percorre `balas.copy()`?",
+         "opcoes": ["Para duplicar as balas", "Para não alterar o grupo enquanto ele é percorrido",
+                    "Porque copy() é mais rápido", "Para salvar as balas num arquivo"], "correta": 1,
+         "explicacao": "Remover itens da mesma coleção que você está percorrendo pode pular itens. A cópia evita isso."},
+    ],
+    "desafios": [
+        {
+            "titulo": "Painel de controle",
+            "enunciado": "Crie a classe `Settings` com estes atributos no __init__ (os mesmos do livro):\n"
+                         "• screen_width = 1200, screen_height = 800, bg_color = (230, 230, 230)\n"
+                         "• ship_speed = 1.5\n"
+                         "• bullet_speed = 2.0, bullet_width = 3, bullet_height = 15, bullet_color = (60, 60, 60)\n"
+                         "• bullets_allowed = 3",
+            "inicial": "class Settings:\n    pass\n",
+            "dica": "Dentro de def __init__(self):, escreva uma linha self.nome = valor para cada atributo.",
+            "solucao": _c('''
+class Settings:
+    """Guarda as configurações do Alien Invasion."""
+
+    def __init__(self):
+        self.screen_width = 1200
+        self.screen_height = 800
+        self.bg_color = (230, 230, 230)
+        self.ship_speed = 1.5
+        self.bullet_speed = 2.0
+        self.bullet_width = 3
+        self.bullet_height = 15
+        self.bullet_color = (60, 60, 60)
+        self.bullets_allowed = 3
+'''),
+            "casos": [caso([classe("Settings"),
+                            regra(lambda o, n, c: _teste_settings(n),
+                                  "Algum atributo de Settings está faltando ou com o valor diferente. Confira cada um no enunciado.")])],
+        },
+        {
+            "titulo": "Nave a postos",
+            "enunciado": "Crie a função `posicionar_nave(tela_rect, nave_rect)` que coloca a nave no meio da base da tela "
+                         "(o midbottom da nave igual ao midbottom da tela) e devolve o próprio nave_rect.\n\n"
+                         "Exemplo: tela Rect(0, 0, 1200, 800) e nave Rect(0, 0, 60, 48) → nave fica em <rect(570, 752, 60, 48)>.",
+            "inicial": _c('''
+import pygame
+
+
+def posicionar_nave(tela_rect, nave_rect):
+    pass
+
+
+tela = pygame.Rect(0, 0, 1200, 800)
+nave = pygame.Rect(0, 0, 60, 48)
+print(posicionar_nave(tela, nave))
+''') + "\n",
+            "dica": "Uma linha resolve: nave_rect.midbottom = tela_rect.midbottom. Depois, return nave_rect.",
+            "solucao": _c('''
+import pygame
+
+
+def posicionar_nave(tela_rect, nave_rect):
+    nave_rect.midbottom = tela_rect.midbottom
+    return nave_rect
+
+
+tela = pygame.Rect(0, 0, 1200, 800)
+nave = pygame.Rect(0, 0, 60, 48)
+print(posicionar_nave(tela, nave))
+'''),
+            "casos": [caso([funcao("posicionar_nave"),
+                            regra(lambda o, n, c: _teste_posicionar(n),
+                                  "Teste: numa tela 1200x800, a nave 60x48 deveria ficar em (570, 752); numa tela 800x600, "
+                                  "uma nave 40x30 deveria ficar em (380, 570). A função também precisa devolver o nave_rect.")])],
+        },
+        {
+            "titulo": "Foguete em 4 direções",
+            "enunciado": "Inspirado no exercício do foguete do livro: crie a classe `Ship(settings, screen_rect)`.\n"
+                         "• rect de 60x48 começando no meio da base da tela; self.x e self.y decimais\n"
+                         "• flags moving_right, moving_left, moving_up e moving_down (todas False)\n"
+                         "• update(): anda settings.ship_speed na direção de cada flag ligada, sem sair da tela "
+                         "(right < tela.right, left > 0, top > 0, bottom < tela.bottom) e copia x e y para o rect",
+            "inicial": _c('''
+import pygame
+
+
+class Ship:
+    def __init__(self, settings, screen_rect):
+        self.settings = settings
+        self.screen_rect = screen_rect
+        self.rect = pygame.Rect(0, 0, 60, 48)
+        self.rect.midbottom = screen_rect.midbottom
+        # Crie self.x, self.y e as 4 flags
+
+    def update(self):
+        pass
+''') + "\n",
+            "dica": "self.y = float(self.rect.y). No update, quatro ifs (um por flag) e, no fim, self.rect.x = self.x e self.rect.y = self.y. "
+                    "Lembre: para subir, o y DIMINUI.",
+            "solucao": _c('''
+import pygame
+
+
+class Ship:
+    def __init__(self, settings, screen_rect):
+        self.settings = settings
+        self.screen_rect = screen_rect
+        self.rect = pygame.Rect(0, 0, 60, 48)
+        self.rect.midbottom = screen_rect.midbottom
+        self.x = float(self.rect.x)
+        self.y = float(self.rect.y)
+        self.moving_right = False
+        self.moving_left = False
+        self.moving_up = False
+        self.moving_down = False
+
+    def update(self):
+        if self.moving_right and self.rect.right < self.screen_rect.right:
+            self.x += self.settings.ship_speed
+        if self.moving_left and self.rect.left > 0:
+            self.x -= self.settings.ship_speed
+        if self.moving_up and self.rect.top > 0:
+            self.y -= self.settings.ship_speed
+        if self.moving_down and self.rect.bottom < self.screen_rect.bottom:
+            self.y += self.settings.ship_speed
+        self.rect.x = self.x
+        self.rect.y = self.y
+'''),
+            "casos": [caso([classe("Ship"),
+                            regra(lambda o, n, c: _teste_foguete(n),
+                                  "Teste numa tela 300x200 com ship_speed 2.5: a nave começa em (120, 152) com as 4 flags False; "
+                                  "update() sem flags não a move; com moving_up, 4 updates levam o y a 142; e em cada direção ela "
+                                  "precisa parar na borda da tela, sem passar dela.")])],
+        },
+        {
+            "titulo": "Teclado de bordo",
+            "enunciado": "Crie a função `checar_teclas(evento, nave)`:\n"
+                         "• KEYDOWN de K_RIGHT liga nave.moving_right; KEYDOWN de K_LEFT liga nave.moving_left\n"
+                         "• KEYUP de K_RIGHT desliga moving_right; KEYUP de K_LEFT desliga moving_left\n"
+                         "• outras teclas não mudam nada",
+            "inicial": _c('''
+import pygame
+
+
+class Nave:
+    def __init__(self):
+        self.moving_right = False
+        self.moving_left = False
+
+
+def checar_teclas(evento, nave):
+    pass
+
+
+nave = Nave()
+checar_teclas(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RIGHT), nave)
+print("Direita:", nave.moving_right)
+''') + "\n",
+            "dica": "Primeiro teste evento.type == pygame.KEYDOWN (ou KEYUP). Dentro, teste evento.key == pygame.K_RIGHT ou pygame.K_LEFT.",
+            "solucao": _c('''
+import pygame
+
+
+class Nave:
+    def __init__(self):
+        self.moving_right = False
+        self.moving_left = False
+
+
+def checar_teclas(evento, nave):
+    if evento.type == pygame.KEYDOWN:
+        if evento.key == pygame.K_RIGHT:
+            nave.moving_right = True
+        elif evento.key == pygame.K_LEFT:
+            nave.moving_left = True
+    elif evento.type == pygame.KEYUP:
+        if evento.key == pygame.K_RIGHT:
+            nave.moving_right = False
+        elif evento.key == pygame.K_LEFT:
+            nave.moving_left = False
+
+
+nave = Nave()
+checar_teclas(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RIGHT), nave)
+print("Direita:", nave.moving_right)
+'''),
+            "casos": [caso([funcao("checar_teclas"),
+                            regra(lambda o, n, c: _teste_teclas(n),
+                                  "Teste: apertar → (KEYDOWN) direita e esquerda ligam as flags; soltar (KEYUP) desliga só a "
+                                  "flag daquela tecla; a barra de espaço não muda nenhuma flag.")])],
+        },
+        {
+            "titulo": "Primeiro disparo",
+            "enunciado": "Crie a classe `Bullet(settings, nave_rect)`, filha de `Sprite`:\n"
+                         "• chame super().__init__()\n"
+                         "• rect com settings.bullet_width x settings.bullet_height, com o midtop no midtop da nave\n"
+                         "• self.y decimal\n"
+                         "• update(): sobe settings.bullet_speed (o y diminui) e copia para rect.y",
+            "inicial": _c('''
+import pygame
+from pygame.sprite import Sprite
+
+
+class Bullet(Sprite):
+    pass
+''') + "\n",
+            "dica": "self.rect = pygame.Rect(0, 0, settings.bullet_width, settings.bullet_height) e depois "
+                    "self.rect.midtop = nave_rect.midtop. Guarde settings em self.settings para usar no update.",
+            "solucao": _c('''
+import pygame
+from pygame.sprite import Sprite
+
+
+class Bullet(Sprite):
+    def __init__(self, settings, nave_rect):
+        super().__init__()
+        self.settings = settings
+        self.rect = pygame.Rect(0, 0, settings.bullet_width, settings.bullet_height)
+        self.rect.midtop = nave_rect.midtop
+        self.y = float(self.rect.y)
+
+    def update(self):
+        self.y -= self.settings.bullet_speed
+        self.rect.y = self.y
+'''),
+            "casos": [caso([classe("Bullet"),
+                            regra(lambda o, n, c: _teste_bala(n),
+                                  "Teste: Bullet precisa herdar de Sprite; com bala 3x15 e nave em Rect(570, 752, 60, 48), "
+                                  "o midtop da bala é (600, 752); depois de 2 updates com velocidade 2.0, o y vai a 748. "
+                                  "O tamanho e a velocidade devem vir de settings.")])],
+        },
+        {
+            "titulo": "Caça-bugs: a nave empacada",
+            "enunciado": "A nave deveria andar 1.5 por quadro e terminar em 585, mas o programa mostra 570. "
+                         "Encontre o que falta e conserte.",
+            "inicial": _c('''
+import pygame
+
+
+class Ship:
+    def __init__(self, speed):
+        self.speed = speed
+        self.rect = pygame.Rect(570, 752, 60, 48)
+        self.x = float(self.rect.x)
+        self.moving_right = True
+
+    def update(self):
+        if self.moving_right:
+            self.x += self.speed
+
+
+nave = Ship(1.5)
+for _ in range(10):
+    nave.update()
+print(nave.rect.x)
+''') + "\n",
+            "dica": "O self.x muda, mas o retângulo da nave nunca fica sabendo disso.",
+            "solucao": _c('''
+import pygame
+
+
+class Ship:
+    def __init__(self, speed):
+        self.speed = speed
+        self.rect = pygame.Rect(570, 752, 60, 48)
+        self.x = float(self.rect.x)
+        self.moving_right = True
+
+    def update(self):
+        if self.moving_right:
+            self.x += self.speed
+        self.rect.x = self.x
+
+
+nave = Ship(1.5)
+for _ in range(10):
+    nave.update()
+print(nave.rect.x)
+'''),
+            "casos": [caso([saida("585")])],
+        },
+    ],
+    "chefe": {
+        "titulo": "O Hangar",
+        "enunciado": "A Settings e a Bullet já estão prontas. Escreva duas funções:\n\n"
+                     "• `disparar(balas, settings, nave_rect)`: se len(balas) for menor que settings.bullets_allowed, cria uma "
+                     "Bullet, adiciona ao grupo e devolve True. Se o limite já foi atingido, não cria nada e devolve False.\n"
+                     "• `atualizar_balas(balas)`: atualiza todas as balas e remove do grupo as que têm rect.bottom <= 0.",
+        "inicial": _c('''
+import pygame
+from pygame.sprite import Sprite
+
+
+class Settings:
+    def __init__(self):
+        self.bullet_speed = 2.0
+        self.bullet_width = 3
+        self.bullet_height = 15
+        self.bullets_allowed = 3
+
+
+class Bullet(Sprite):
+    def __init__(self, settings, nave_rect):
+        super().__init__()
+        self.settings = settings
+        self.rect = pygame.Rect(0, 0, settings.bullet_width, settings.bullet_height)
+        self.rect.midtop = nave_rect.midtop
+        self.y = float(self.rect.y)
+
+    def update(self):
+        self.y -= self.settings.bullet_speed
+        self.rect.y = self.y
+
+
+def disparar(balas, settings, nave_rect):
+    pass
+
+
+def atualizar_balas(balas):
+    pass
+
+
+# Teste rápido
+settings = Settings()
+nave = pygame.Rect(570, 752, 60, 48)
+balas = pygame.sprite.Group()
+for _ in range(5):
+    print("Disparou?", disparar(balas, settings, nave))
+print("Balas no ar:", len(balas))
+''') + "\n",
+        "dica": "Em atualizar_balas: primeiro balas.update(); depois for bala in balas.copy(): if bala.rect.bottom <= 0: balas.remove(bala).",
+        "solucao": _c('''
+import pygame
+from pygame.sprite import Sprite
+
+
+class Settings:
+    def __init__(self):
+        self.bullet_speed = 2.0
+        self.bullet_width = 3
+        self.bullet_height = 15
+        self.bullets_allowed = 3
+
+
+class Bullet(Sprite):
+    def __init__(self, settings, nave_rect):
+        super().__init__()
+        self.settings = settings
+        self.rect = pygame.Rect(0, 0, settings.bullet_width, settings.bullet_height)
+        self.rect.midtop = nave_rect.midtop
+        self.y = float(self.rect.y)
+
+    def update(self):
+        self.y -= self.settings.bullet_speed
+        self.rect.y = self.y
+
+
+def disparar(balas, settings, nave_rect):
+    if len(balas) < settings.bullets_allowed:
+        balas.add(Bullet(settings, nave_rect))
+        return True
+    return False
+
+
+def atualizar_balas(balas):
+    balas.update()
+    for bala in balas.copy():
+        if bala.rect.bottom <= 0:
+            balas.remove(bala)
+
+
+# Teste rápido
+settings = Settings()
+nave = pygame.Rect(570, 752, 60, 48)
+balas = pygame.sprite.Group()
+for _ in range(5):
+    print("Disparou?", disparar(balas, settings, nave))
+print("Balas no ar:", len(balas))
+'''),
+        "casos": [caso([funcao("disparar"), funcao("atualizar_balas"),
+                        regra(lambda o, n, c: _teste_hangar(n),
+                              "Teste: 5 disparos seguidos devem devolver True, True, True, False, False (limite de 3); "
+                              "as balas continuam no ar depois de 100 atualizações e somem todas depois que passam do topo "
+                              "(rect.bottom <= 0); aí dá para disparar de novo.")])],
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# CAPÍTULO 13: Alien Invasion, os alienígenas
+# ---------------------------------------------------------------------------
+
+CAP13 = {
+    "num": 13,
+    "titulo": "Alien Invasion: Alienígenas!",
+    "subtitulo": "A frota, colisões, vidas e fim de jogo",
+    "licoes": [
+        {
+            "titulo": "Montando a frota",
+            "texto": [
+                "Hora dos inimigos! Cada alienígena é um `Sprite` com seu `rect`, e todos ficam num grupo `aliens`.",
+                "Para encher a tela, o livro usa dois laços `while`. O de dentro preenche uma **linha**: começa em "
+                "`x = largura_do_alien` e avança `2 * largura_do_alien` (um alien e um espaço vazio), enquanto "
+                "`x < largura_da_tela - 2 * largura_do_alien`.",
+                "O de fora cria várias **linhas**: começa em `y = altura_do_alien`, avança `2 * altura_do_alien` e para "
+                "quando `y` chega a `altura_da_tela - 3 * altura_do_alien`. Esse espaço sobrando embaixo é para a nave "
+                "ter tempo de atirar.",
+                "Repare que no fim de cada linha o `x` volta ao começo.",
+            ],
+            "exemplo": _c('''
+largura_tela, altura_tela = 600, 400
+largura_alien, altura_alien = 60, 50
+
+posicoes = []
+x, y = largura_alien, altura_alien
+while y < altura_tela - 3 * altura_alien:
+    while x < largura_tela - 2 * largura_alien:
+        posicoes.append((x, y))
+        x += 2 * largura_alien
+    x = largura_alien          # volta para o começo da próxima linha
+    y += 2 * altura_alien
+
+print(f"{len(posicoes)} alienígenas:")
+for p in posicoes:
+    print(p)
+'''),
+        },
+        {
+            "titulo": "A frota marcha",
+            "texto": [
+                "A frota anda de lado e, ao bater numa borda, **desce** e **inverte** a direção.",
+                "O livro guarda isso em Settings: `alien_speed` (velocidade), `fleet_drop_speed` (quanto desce) e "
+                "`fleet_direction`, que vale `1` para a direita e `-1` para a esquerda. Multiplicar pela direção "
+                "evita um if: `self.x += speed * direction`.",
+                "Cada alien tem `check_edges()`, que devolve True se ele encostou numa borda: "
+                "`self.rect.right >= screen_rect.right or self.rect.left <= 0`.",
+                "A cada quadro: se **algum** alien está na borda, a frota toda desce e `fleet_direction *= -1` "
+                "(basta um, por isso o `break`). Depois, todos andam.",
+            ],
+            "exemplo": _c('''
+import pygame
+from pygame.sprite import Sprite
+
+
+class Alien(Sprite):
+    def __init__(self, x):
+        super().__init__()
+        self.rect = pygame.Rect(x, 20, 60, 50)
+        self.x = float(x)
+
+    def check_edges(self, tela):
+        return self.rect.right >= tela.right or self.rect.left <= 0
+
+
+tela = pygame.Rect(0, 0, 300, 200)
+velocidade, direcao, queda = 40, 1, 10
+aliens = pygame.sprite.Group(Alien(60), Alien(160))
+
+for quadro in range(5):
+    for alien in aliens:
+        if alien.check_edges(tela):
+            for a in aliens:
+                a.rect.y += queda
+            direcao *= -1
+            print("  Borda! A frota desce e vira.")
+            break
+    for alien in aliens:
+        alien.x += velocidade * direcao
+        alien.rect.x = alien.x
+    print(f"Quadro {quadro + 1}:", [(a.rect.x, a.rect.y) for a in aliens])
+'''),
+        },
+        {
+            "titulo": "Acertando os alvos",
+            "texto": [
+                "Uma **colisão** acontece quando dois retângulos se sobrepõem. O pygame confere isso para você.",
+                "`pygame.sprite.groupcollide(balas, aliens, True, True)` compara cada bala com cada alien e devolve um "
+                "dicionário `{bala: [aliens atingidos]}`. Os dois `True` mandam remover a bala e o alien que se tocaram.",
+                "Quando a frota acaba (`if not aliens:`), o livro esvazia as balas com `balas.empty()` e cria uma frota nova.",
+                "`pygame.sprite.spritecollideany(nave, aliens)` devolve o primeiro alien que encostou na nave, ou `None` se nenhum encostou.",
+            ],
+            "exemplo": _c('''
+import pygame
+from pygame.sprite import Sprite
+
+
+class Coisa(Sprite):
+    def __init__(self, x, y, w, h):
+        super().__init__()
+        self.rect = pygame.Rect(x, y, w, h)
+
+
+balas = pygame.sprite.Group(Coisa(30, 40, 3, 15), Coisa(500, 300, 3, 15))
+aliens = pygame.sprite.Group(Coisa(0, 0, 60, 50), Coisa(200, 0, 60, 50))
+
+colisoes = pygame.sprite.groupcollide(balas, aliens, True, True)
+print("Batidas:", len(colisoes))
+print("Balas restantes:", len(balas), "| Aliens restantes:", len(aliens))
+
+nave = Coisa(210, 30, 60, 48)
+atingiu = pygame.sprite.spritecollideany(nave, aliens)
+print("Algum alien encostou na nave?", atingiu is not None)
+'''),
+        },
+        {
+            "titulo": "Vidas e fim de jogo",
+            "texto": [
+                "O livro cria a classe `GameStats` para guardar as estatísticas da partida. O número de naves vem de "
+                "`settings.ship_limit`, e o método `reset_stats()` recomeça os valores numa nova partida.",
+                "Quando a nave é atingida (ou um alien chega à base da tela): se ainda há naves (`ships_left > 0`), tira "
+                "uma, esvazia aliens e balas e recomeça a fase. Senão, `game_active = False` e o jogo acaba.",
+                "A flag `game_active` diz se o laço do jogo deve continuar atualizando tudo.",
+            ],
+            "exemplo": _c('''
+class Settings:
+    def __init__(self):
+        self.ship_limit = 2
+
+
+class GameStats:
+    def __init__(self, settings):
+        self.settings = settings
+        self.reset_stats()
+        self.game_active = True
+
+    def reset_stats(self):
+        self.ships_left = self.settings.ship_limit
+
+
+stats = GameStats(Settings())
+for batida in range(4):
+    if stats.ships_left > 0:
+        stats.ships_left -= 1
+        print(f"Nave atingida! Restam {stats.ships_left}.")
+    else:
+        stats.game_active = False
+        print("GAME OVER")
+        break
+'''),
+        },
+    ],
+    "quiz": [
+        {"pergunta": "Na criação da frota, por que x avança `2 * largura_do_alien`?",
+         "opcoes": ["Para os aliens ficarem colados", "Para deixar um espaço do tamanho de um alien entre eles",
+                    "Porque a tela tem duas metades", "Para dobrar a velocidade"], "correta": 1,
+         "explicacao": "Um alien ocupa uma largura e o espaço vazio ao lado ocupa outra."},
+        {"pergunta": "O que `fleet_direction = -1` significa?",
+         "opcoes": ["A frota desce", "A frota anda para a esquerda", "A frota para", "A frota sobe"], "correta": 1,
+         "explicacao": "speed * -1 dá um valor negativo, e o x diminui: a frota vai para a esquerda."},
+        {"pergunta": "O que é mostrado?", "codigo": "direcao = 1\ndirecao *= -1\ndirecao *= -1\nprint(direcao)",
+         "opcoes": ["1", "-1", "0", "Erro"], "correta": 0,
+         "explicacao": "Inverter duas vezes volta ao valor original."},
+        {"pergunta": "O que `groupcollide(balas, aliens, True, False)` faz com quem colidiu?",
+         "opcoes": ["Remove as balas e mantém os aliens", "Remove os dois", "Remove os aliens e mantém as balas", "Não remove nada"],
+         "correta": 0, "explicacao": "O primeiro True vale para o primeiro grupo (balas); o False mantém os aliens."},
+        {"pergunta": "O que `spritecollideany(nave, aliens)` devolve se nenhum alien encosta na nave?",
+         "opcoes": ["False", "0", "None", "Uma lista vazia"], "correta": 2,
+         "explicacao": "Sem colisão, o resultado é None. Com colisão, é o alien que encostou."},
+        {"pergunta": "Quando um alien chega à base da tela, o livro trata isso como...",
+         "opcoes": ["Ponto para o jogador", "Nada acontece", "A nave foi atingida", "Uma nova fase sem perder vida"],
+         "correta": 2, "explicacao": "Deixar um alien passar custa uma nave, igual a uma batida."},
+        {"pergunta": "Para que serve a flag game_active?",
+         "opcoes": ["Guardar a pontuação", "Saber se o jogo está rodando ou terminou", "Contar os aliens", "Mudar a cor da tela"],
+         "correta": 1, "explicacao": "Com game_active False, o laço para de mover a nave, as balas e os aliens."},
+    ],
+    "desafios": [
+        {
+            "titulo": "Quantos cabem?",
+            "enunciado": "Crie a função `posicoes_frota(largura_tela, altura_tela, largura_alien, altura_alien)` que devolve "
+                         "a lista de tuplas (x, y) de cada alien, usando o mesmo método da lição:\n"
+                         "• x começa em largura_alien e avança 2 * largura_alien enquanto x < largura_tela - 2 * largura_alien\n"
+                         "• y começa em altura_alien e avança 2 * altura_alien enquanto y < altura_tela - 3 * altura_alien\n\n"
+                         "Exemplo: posicoes_frota(600, 400, 60, 50) devolve 8 posições, de (60, 50) até (420, 150).",
+            "inicial": _c('''
+def posicoes_frota(largura_tela, altura_tela, largura_alien, altura_alien):
+    posicoes = []
+    # Seu código aqui
+    return posicoes
+
+
+print(posicoes_frota(600, 400, 60, 50))
+''') + "\n",
+            "dica": "Dois while, um dentro do outro. Não esqueça de voltar o x para largura_alien no fim de cada linha!",
+            "solucao": _c('''
+def posicoes_frota(largura_tela, altura_tela, largura_alien, altura_alien):
+    posicoes = []
+    x, y = largura_alien, altura_alien
+    while y < altura_tela - 3 * altura_alien:
+        while x < largura_tela - 2 * largura_alien:
+            posicoes.append((x, y))
+            x += 2 * largura_alien
+        x = largura_alien
+        y += 2 * altura_alien
+    return posicoes
+
+
+print(posicoes_frota(600, 400, 60, 50))
+'''),
+            "casos": [caso([funcao("posicoes_frota"),
+                            regra(lambda o, n, c: _teste_frota(n),
+                                  "As posições não bateram. Teste: posicoes_frota(600, 400, 60, 50) deveria dar "
+                                  f"{_frota_ref(600, 400, 60, 50)}. Também testo telas e aliens de outros tamanhos.")])],
+        },
+        {
+            "titulo": "Radar de bordas",
+            "enunciado": "Crie a classe `Alien(x, y)`, filha de `Sprite`:\n"
+                         "• rect de 60x50 com o canto superior esquerdo em (x, y) e self.x decimal\n"
+                         "• check_edges(screen_rect): devolve True se o alien encostou na borda direita (right >= tela.right) "
+                         "ou na esquerda (left <= 0); senão, False",
+            "inicial": _c('''
+import pygame
+from pygame.sprite import Sprite
+
+
+class Alien(Sprite):
+    pass
+''') + "\n",
+            "dica": "return self.rect.right >= screen_rect.right or self.rect.left <= 0",
+            "solucao": _c('''
+import pygame
+from pygame.sprite import Sprite
+
+
+class Alien(Sprite):
+    def __init__(self, x, y):
+        super().__init__()
+        self.rect = pygame.Rect(x, y, 60, 50)
+        self.x = float(self.rect.x)
+
+    def check_edges(self, screen_rect):
+        return self.rect.right >= screen_rect.right or self.rect.left <= 0
+'''),
+            "casos": [caso([classe("Alien"),
+                            regra(lambda o, n, c: _teste_bordas(n),
+                                  "Teste numa tela de 400 de largura: Alien(100, 20) não está na borda; Alien(340, 0) "
+                                  "(right = 400) e Alien(0, 0) estão; Alien(339, 0) e Alien(1, 0) não estão. O alien "
+                                  "precisa herdar de Sprite e ter rect de 60x50.")])],
+        },
+        {
+            "titulo": "Meia-volta, volver!",
+            "enunciado": "Crie a função `mudar_direcao(aliens, settings)`: desce cada alien do grupo "
+                         "settings.fleet_drop_speed pixels (rect.y) e inverte settings.fleet_direction (1 vira -1 e vice-versa).",
+            "inicial": _c('''
+def mudar_direcao(aliens, settings):
+    pass
+''') + "\n",
+            "dica": "Um for nos aliens com alien.rect.y += settings.fleet_drop_speed e, FORA do for, settings.fleet_direction *= -1.",
+            "solucao": _c('''
+def mudar_direcao(aliens, settings):
+    for alien in aliens:
+        alien.rect.y += settings.fleet_drop_speed
+    settings.fleet_direction *= -1
+'''),
+            "casos": [caso([funcao("mudar_direcao"),
+                            regra(lambda o, n, c: _teste_meia_volta(n),
+                                  "Teste: aliens em y = 50, 50 e 150 com fleet_drop_speed 10 devem ir para 60, 60 e 160, e a "
+                                  "direção de 1 para -1. Chamando de novo (com queda 25), voltam a 1 e descem mais 25. "
+                                  "A direção deve inverter UMA vez por chamada.")])],
+        },
+        {
+            "titulo": "Tiro certeiro",
+            "enunciado": "Crie a função `checar_colisoes(balas, aliens)` que usa pygame.sprite.groupcollide para remover as "
+                         "balas e os aliens que se tocaram e devolve QUANTOS aliens foram destruídos.\n\n"
+                         "Atenção: uma bala pode atingir mais de um alien ao mesmo tempo.",
+            "inicial": _c('''
+import pygame
+
+
+def checar_colisoes(balas, aliens):
+    pass
+''') + "\n",
+            "dica": "colisoes = pygame.sprite.groupcollide(balas, aliens, True, True). Depois some len(lista) para cada lista em colisoes.values().",
+            "solucao": _c('''
+import pygame
+
+
+def checar_colisoes(balas, aliens):
+    colisoes = pygame.sprite.groupcollide(balas, aliens, True, True)
+    total = 0
+    for atingidos in colisoes.values():
+        total += len(atingidos)
+    return total
+'''),
+            "casos": [caso([funcao("checar_colisoes"),
+                            regra(lambda o, n, c: _teste_colisoes(n),
+                                  "Teste: 3 balas e 4 aliens, em que uma bala acerta 1 alien, outra acerta 2 de uma vez e a "
+                                  "terceira erra. Deveria devolver 3, sobrando 1 bala e 1 alien. Sem balas, devolve 0.")])],
+        },
+        {
+            "titulo": "Estatísticas da partida",
+            "enunciado": "Crie a classe `GameStats(settings)`:\n"
+                         "• guarda settings, chama reset_stats() e cria game_active = True\n"
+                         "• reset_stats(): ships_left recebe settings.ship_limit",
+            "inicial": "class GameStats:\n    pass\n",
+            "dica": "No __init__: self.settings = settings, self.reset_stats(), self.game_active = True.",
+            "solucao": _c('''
+class GameStats:
+    """Guarda as estatísticas do Alien Invasion."""
+
+    def __init__(self, settings):
+        self.settings = settings
+        self.reset_stats()
+        self.game_active = True
+
+    def reset_stats(self):
+        self.ships_left = self.settings.ship_limit
+'''),
+            "casos": [caso([classe("GameStats"),
+                            regra(lambda o, n, c: _teste_stats13(n),
+                                  "Teste: com ship_limit 3, GameStats começa com ships_left 3 e game_active True; depois de "
+                                  "mudar ship_limit para 5, reset_stats() deixa ships_left em 5.")])],
+        },
+        {
+            "titulo": "Caça-bugs: a frota teimosa",
+            "enunciado": "A frota desce direitinho, mas nunca muda de direção: o programa mostra 1 em vez de -1. Conserte.",
+            "inicial": _c('''
+class Settings:
+    def __init__(self):
+        self.fleet_direction = 1
+        self.fleet_drop_speed = 10
+
+
+def mudar_direcao(settings, alturas):
+    for i in range(len(alturas)):
+        alturas[i] += settings.fleet_drop_speed
+    settings.fleet_direction * -1
+
+
+settings = Settings()
+alturas = [50, 50, 150]
+mudar_direcao(settings, alturas)
+print(settings.fleet_direction)
+print(alturas)
+''') + "\n",
+            "dica": "Fazer uma conta não guarda o resultado em lugar nenhum. Falta um sinal de atribuição.",
+            "solucao": _c('''
+class Settings:
+    def __init__(self):
+        self.fleet_direction = 1
+        self.fleet_drop_speed = 10
+
+
+def mudar_direcao(settings, alturas):
+    for i in range(len(alturas)):
+        alturas[i] += settings.fleet_drop_speed
+    settings.fleet_direction *= -1
+
+
+settings = Settings()
+alturas = [50, 50, 150]
+mudar_direcao(settings, alturas)
+print(settings.fleet_direction)
+print(alturas)
+'''),
+            "casos": [caso([saida("-1\n[60, 60, 160]")])],
+        },
+    ],
+    "chefe": {
+        "titulo": "A Invasão",
+        "enunciado": "Settings, Alien e GameStats já estão prontos. Escreva três funções:\n\n"
+                     "• `atualizar_frota(aliens, settings, screen_rect)`: se ALGUM alien estiver na borda (check_edges), "
+                     "desce todos settings.fleet_drop_speed e inverte settings.fleet_direction (só uma vez). Depois, "
+                     "chama aliens.update().\n"
+                     "• `aliens_no_chao(aliens, screen_rect)`: devolve True se algum alien tem rect.bottom >= screen_rect.bottom.\n"
+                     "• `nave_atingida(stats, aliens, balas)`: se stats.ships_left > 0, tira uma nave e esvazia aliens e "
+                     "balas. Senão, stats.game_active = False.",
+        "inicial": _c('''
+import pygame
+from pygame.sprite import Sprite
+
+
+class Settings:
+    def __init__(self):
+        self.alien_speed = 1.0
+        self.fleet_drop_speed = 10
+        self.fleet_direction = 1
+        self.ship_limit = 3
+
+
+class Alien(Sprite):
+    def __init__(self, settings, x, y):
+        super().__init__()
+        self.settings = settings
+        self.rect = pygame.Rect(x, y, 60, 50)
+        self.x = float(x)
+
+    def check_edges(self, screen_rect):
+        return self.rect.right >= screen_rect.right or self.rect.left <= 0
+
+    def update(self):
+        self.x += self.settings.alien_speed * self.settings.fleet_direction
+        self.rect.x = self.x
+
+
+class GameStats:
+    def __init__(self, settings):
+        self.settings = settings
+        self.reset_stats()
+        self.game_active = True
+
+    def reset_stats(self):
+        self.ships_left = self.settings.ship_limit
+
+
+def atualizar_frota(aliens, settings, screen_rect):
+    pass
+
+
+def aliens_no_chao(aliens, screen_rect):
+    pass
+
+
+def nave_atingida(stats, aliens, balas):
+    pass
+''') + "\n",
+        "dica": "Em atualizar_frota: for alien in aliens: if alien.check_edges(screen_rect): (desça todos e inverta) e break. "
+                "Fora do for, aliens.update(). Para esvaziar um grupo: aliens.empty().",
+        "solucao": _c('''
+import pygame
+from pygame.sprite import Sprite
+
+
+class Settings:
+    def __init__(self):
+        self.alien_speed = 1.0
+        self.fleet_drop_speed = 10
+        self.fleet_direction = 1
+        self.ship_limit = 3
+
+
+class Alien(Sprite):
+    def __init__(self, settings, x, y):
+        super().__init__()
+        self.settings = settings
+        self.rect = pygame.Rect(x, y, 60, 50)
+        self.x = float(x)
+
+    def check_edges(self, screen_rect):
+        return self.rect.right >= screen_rect.right or self.rect.left <= 0
+
+    def update(self):
+        self.x += self.settings.alien_speed * self.settings.fleet_direction
+        self.rect.x = self.x
+
+
+class GameStats:
+    def __init__(self, settings):
+        self.settings = settings
+        self.reset_stats()
+        self.game_active = True
+
+    def reset_stats(self):
+        self.ships_left = self.settings.ship_limit
+
+
+def atualizar_frota(aliens, settings, screen_rect):
+    for alien in aliens:
+        if alien.check_edges(screen_rect):
+            for a in aliens:
+                a.rect.y += settings.fleet_drop_speed
+            settings.fleet_direction *= -1
+            break
+    aliens.update()
+
+
+def aliens_no_chao(aliens, screen_rect):
+    for alien in aliens:
+        if alien.rect.bottom >= screen_rect.bottom:
+            return True
+    return False
+
+
+def nave_atingida(stats, aliens, balas):
+    if stats.ships_left > 0:
+        stats.ships_left -= 1
+        aliens.empty()
+        balas.empty()
+    else:
+        stats.game_active = False
+'''),
+        "casos": [caso([funcao("atualizar_frota"), funcao("aliens_no_chao"), funcao("nave_atingida"),
+                        regra(lambda o, n, c: _teste_invasao(n),
+                              "Teste numa tela 400x300 com 3 aliens: a frota anda 1 pixel por quadro para a direita; quando "
+                              "um alien encosta na borda, a frota toda desce 10 e passa a andar para a esquerda (virando uma "
+                              "vez só). aliens_no_chao detecta um alien com bottom >= 300. nave_atingida tira naves "
+                              "(3 → 2 → 1 → 0), esvazia aliens e balas e, quando não há mais naves, faz game_active = False.")])],
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# CAPÍTULO 14: Alien Invasion, pontuação
+# ---------------------------------------------------------------------------
+
+CAP14 = {
+    "num": 14,
+    "titulo": "Alien Invasion: Placar",
+    "subtitulo": "Botão Play, níveis, pontos e recorde",
+    "licoes": [
+        {
+            "titulo": "O botão Play",
+            "texto": [
+                "Agora o jogo começa **parado** (`game_active = False`) e espera o jogador clicar em **Play**.",
+                "O botão é só um `Rect` no centro da tela. Quando chega um evento `MOUSEBUTTONDOWN`, o livro pega a "
+                "posição do mouse com `pygame.mouse.get_pos()` e testa `botao.rect.collidepoint(posicao)`: True se o "
+                "ponto está dentro do retângulo.",
+                "## Cuidado com o botão invisível",
+                "Durante a partida o botão não aparece, mas a área dele continua lá! Por isso o livro só reage ao clique "
+                "se `not game_active`. Ao começar: zera as estatísticas, esvazia aliens e balas, cria a frota e liga "
+                "`game_active`.",
+            ],
+            "exemplo": _c('''
+import pygame
+
+tela = pygame.Rect(0, 0, 1200, 800)
+botao = pygame.Rect(0, 0, 200, 50)
+botao.center = tela.center
+print("Botão Play em:", botao)
+
+game_active = False
+for clique in [(10, 10), (600, 400), (610, 410)]:
+    if botao.collidepoint(clique) and not game_active:
+        game_active = True
+        print(clique, "-> Partida começou!")
+    else:
+        print(clique, "-> nada acontece")
+'''),
+        },
+        {
+            "titulo": "Subindo de nível",
+            "texto": [
+                "Quando a frota é destruída, o jogo fica mais rápido. O livro separa as configurações em dois tipos:",
+                "• **Fixas** (tamanho da tela, `speedup_scale = 1.1`...), definidas no `__init__`.",
+                "• **Dinâmicas** (velocidades da nave, das balas e dos aliens), definidas em `initialize_dynamic_settings()`.",
+                "`increase_speed()` multiplica as velocidades por `speedup_scale`. Ao clicar em Play de novo, o jogo chama "
+                "`initialize_dynamic_settings()` para voltar tudo ao normal.",
+            ],
+            "exemplo": _c('''
+class Settings:
+    def __init__(self):
+        self.speedup_scale = 1.1
+        self.initialize_dynamic_settings()
+
+    def initialize_dynamic_settings(self):
+        self.ship_speed = 1.5
+        self.alien_speed = 1.0
+
+    def increase_speed(self):
+        self.ship_speed *= self.speedup_scale
+        self.alien_speed *= self.speedup_scale
+
+
+s = Settings()
+for nivel in range(1, 5):
+    print(f"Nível {nivel}: nave {s.ship_speed:.2f}, aliens {s.alien_speed:.2f}")
+    s.increase_speed()
+
+s.initialize_dynamic_settings()
+print("Nova partida: aliens", s.alien_speed)
+'''),
+        },
+        {
+            "titulo": "Marcando pontos",
+            "texto": [
+                "A pontuação mora em `GameStats`: `self.score = 0` dentro de `reset_stats()`, porque ela zera a cada partida.",
+                "Cada alien vale `settings.alien_points` (50 no começo). Como `groupcollide` devolve `{bala: [aliens]}`, "
+                "o livro soma assim, para contar todos os aliens que uma bala acertou:",
+                "`for aliens in colisoes.values(): stats.score += settings.alien_points * len(aliens)`",
+                "A cada nível os aliens valem mais: `alien_points = int(alien_points * score_scale)`, com `score_scale = 1.5`.",
+                "## Placar arredondado",
+                "O livro arredonda para dezenas com `round(score, -1)` e separa os milhares com `f\"{numero:,}\"`. Esse "
+                "formato usa vírgula, como nos EUA. Em português, troque por ponto com `.replace(',', '.')`.",
+            ],
+            "exemplo": _c('''
+alien_points = 50
+score = 0
+
+colisoes = {"bala1": ["alien1"], "bala2": ["alien2", "alien3"]}
+for atingidos in colisoes.values():
+    score += alien_points * len(atingidos)
+print("Pontos:", score)
+
+alien_points = int(alien_points * 1.5)
+print("No próximo nível cada alien vale", alien_points)
+
+placar = 1234567
+print(f"{round(placar, -1):,}")
+print(f"{round(placar, -1):,}".replace(",", "."))
+'''),
+        },
+        {
+            "titulo": "Recorde e nível",
+            "texto": [
+                "O recorde (`high_score`) fica no `__init__` de GameStats, **não** em `reset_stats()`. Assim ele sobrevive "
+                "a uma nova partida.",
+                "`check_high_score()` compara: se `score > high_score`, o recorde passa a ser a pontuação atual.",
+                "O nível (`level`) começa em 1 em `reset_stats()` e sobe sempre que a frota é destruída.",
+                "## Recorde para sempre",
+                "Um exercício do livro junta tudo com o capítulo 10: salvar o recorde num arquivo JSON ao sair e "
+                "carregá-lo ao abrir o jogo, usando `Path`, `json.dumps` e `json.loads`.",
+            ],
+            "exemplo": _c('''
+import json
+from pathlib import Path
+
+path = Path("recorde.json")
+if path.exists():
+    recorde = json.loads(path.read_text())
+else:
+    recorde = 0
+print("Recorde carregado:", recorde)
+
+pontos = 2450
+if pontos > recorde:
+    recorde = pontos
+    print("Novo recorde!")
+
+path.write_text(json.dumps(recorde))
+print("Arquivo salvo:", path.read_text())
+'''),
+        },
+    ],
+    "quiz": [
+        {"pergunta": "Por que conferir `not game_active` antes de reagir ao clique no Play?",
+         "opcoes": ["Para o botão mudar de cor", "Porque a área do botão continua clicável mesmo invisível durante o jogo",
+                    "Para salvar o recorde", "Porque o mouse não funciona durante o jogo"], "correta": 1,
+         "explicacao": "Sem esse teste, clicar naquela região no meio da partida reiniciaria o jogo."},
+        {"pergunta": "O que `rect.collidepoint(pos)` verifica?",
+         "opcoes": ["Se dois retângulos se tocam", "Se o ponto pos está dentro do retângulo", "Se o mouse foi clicado",
+                    "A distância até pos"], "correta": 1,
+         "explicacao": "collidepoint testa um ponto; colliderect testa outro retângulo."},
+        {"pergunta": "O que é mostrado?", "codigo": "speed = 1.0\nfor _ in range(2):\n    speed *= 1.1\nprint(round(speed, 2))",
+         "opcoes": ["1.2", "1.21", "2.2", "1.1"], "correta": 1,
+         "explicacao": "1.0 × 1.1 × 1.1 = 1.21. A velocidade cresce em porcentagem, não somando."},
+        {"pergunta": "Por que high_score fica no __init__ de GameStats e não em reset_stats()?",
+         "opcoes": ["Por estilo", "Para não zerar o recorde a cada nova partida",
+                    "Porque reset_stats não pode ter atributos", "Para o jogo ficar mais rápido"], "correta": 1,
+         "explicacao": "reset_stats() roda a cada partida; o __init__ roda uma vez só."},
+        {"pergunta": "O que é mostrado?", "codigo": "print(f\"{round(12347, -1):,}\")",
+         "opcoes": ["12347", "12,350", "12.350", "12,340"], "correta": 1,
+         "explicacao": "round(..., -1) arredonda para 12350 e :, coloca a vírgula dos milhares."},
+        {"pergunta": "Um tiro acerta 2 aliens ao mesmo tempo, e cada um vale 50. Seguindo o livro, quantos pontos o jogador ganha?",
+         "opcoes": ["50", "100", "0", "25"], "correta": 1,
+         "explicacao": "alien_points * len(aliens) = 50 * 2 = 100."},
+        {"pergunta": "Por que chamar initialize_dynamic_settings() quando o jogador clica em Play?",
+         "opcoes": ["Para voltar as velocidades ao início numa nova partida", "Para abrir a janela",
+                    "Para salvar o jogo", "Para trocar a cor do botão"], "correta": 0,
+         "explicacao": "Senão a nova partida começaria na velocidade em que a anterior terminou."},
+    ],
+    "desafios": [
+        {
+            "titulo": "Clique no Play",
+            "enunciado": "Crie a função `clicou_play(botao_rect, pos, game_active)` que devolve True só quando o ponto pos "
+                         "está dentro do botão E o jogo não está ativo.",
+            "inicial": _c('''
+import pygame
+
+
+def clicou_play(botao_rect, pos, game_active):
+    pass
+
+
+botao = pygame.Rect(500, 375, 200, 50)
+print(clicou_play(botao, (600, 400), False))
+''') + "\n",
+            "dica": "return botao_rect.collidepoint(pos) and not game_active",
+            "solucao": _c('''
+import pygame
+
+
+def clicou_play(botao_rect, pos, game_active):
+    return botao_rect.collidepoint(pos) and not game_active
+
+
+botao = pygame.Rect(500, 375, 200, 50)
+print(clicou_play(botao, (600, 400), False))
+'''),
+            "casos": [caso([funcao("clicou_play"),
+                            regra(lambda o, n, c: _teste_play(n),
+                                  "Teste com o botão Rect(500, 375, 200, 50): clicar em (600, 400) com o jogo parado → True; "
+                                  "com o jogo ativo → False; clicar em (10, 10) → False.")])],
+        },
+        {
+            "titulo": "Acelerando",
+            "enunciado": "Crie a classe `Settings`:\n"
+                         "• no __init__: speedup_scale = 1.1, score_scale = 1.5 e uma chamada a initialize_dynamic_settings()\n"
+                         "• initialize_dynamic_settings(): ship_speed = 1.5, bullet_speed = 2.5, alien_speed = 1.0, "
+                         "fleet_direction = 1, alien_points = 50\n"
+                         "• increase_speed(): multiplica as três velocidades por speedup_scale e faz "
+                         "alien_points = int(alien_points * score_scale)",
+            "inicial": "class Settings:\n    pass\n",
+            "dica": "Use self.speedup_scale e self.score_scale dentro de increase_speed(). O int() corta os decimais dos pontos.",
+            "solucao": _c('''
+class Settings:
+    def __init__(self):
+        self.speedup_scale = 1.1
+        self.score_scale = 1.5
+        self.initialize_dynamic_settings()
+
+    def initialize_dynamic_settings(self):
+        self.ship_speed = 1.5
+        self.bullet_speed = 2.5
+        self.alien_speed = 1.0
+        self.fleet_direction = 1
+        self.alien_points = 50
+
+    def increase_speed(self):
+        self.ship_speed *= self.speedup_scale
+        self.bullet_speed *= self.speedup_scale
+        self.alien_speed *= self.speedup_scale
+        self.alien_points = int(self.alien_points * self.score_scale)
+'''),
+            "casos": [caso([classe("Settings"),
+                            regra(lambda o, n, c: _teste_acelerar(n),
+                                  "Teste: os valores iniciais devem ser os do enunciado; depois de increase_speed(), "
+                                  "ship_speed ≈ 1.65, bullet_speed ≈ 2.75, alien_speed ≈ 1.1 e alien_points = 75; depois de "
+                                  "outro, alien_points = 112; e initialize_dynamic_settings() volta tudo ao início (inclusive "
+                                  "fleet_direction = 1).")])],
+        },
+        {
+            "titulo": "Somando pontos",
+            "enunciado": "Crie a função `pontos_colisoes(colisoes, alien_points)` que recebe o dicionário devolvido por "
+                         "groupcollide ({bala: [aliens]}) e devolve quantos pontos ganhar.\n\n"
+                         "Exemplo: pontos_colisoes({'b1': ['a1'], 'b2': ['a2', 'a3']}, 50) devolve 150.",
+            "inicial": _c('''
+def pontos_colisoes(colisoes, alien_points):
+    pass
+
+
+print(pontos_colisoes({"b1": ["a1"], "b2": ["a2", "a3"]}, 50))
+''') + "\n",
+            "dica": "Percorra colisoes.values() e some alien_points * len(lista).",
+            "solucao": _c('''
+def pontos_colisoes(colisoes, alien_points):
+    total = 0
+    for atingidos in colisoes.values():
+        total += alien_points * len(atingidos)
+    return total
+
+
+print(pontos_colisoes({"b1": ["a1"], "b2": ["a2", "a3"]}, 50))
+'''),
+            "casos": [caso([funcao("pontos_colisoes"),
+                            chama("pontos_colisoes", ({"b1": ["a1"], "b2": ["a2", "a3"]}, 50), 150),
+                            chama("pontos_colisoes", ({}, 50), 0),
+                            chama("pontos_colisoes", ({"b": ["a", "b", "c", "d"]}, 75), 300)])],
+        },
+        {
+            "titulo": "Placar brasileiro",
+            "enunciado": "Crie a função `formatar_placar(score)` que arredonda para a dezena mais próxima e separa os "
+                         "milhares com PONTO.\n\nExemplos: 12347 → '12.350'; 1234567 → '1.234.570'; 42 → '40'.",
+            "inicial": _c('''
+def formatar_placar(score):
+    pass
+
+
+print(formatar_placar(12347))
+''') + "\n",
+            "dica": "f\"{round(score, -1):,}\" dá '12,350'. Depois troque a vírgula por ponto com .replace(',', '.').",
+            "solucao": _c('''
+def formatar_placar(score):
+    return f"{round(score, -1):,}".replace(",", ".")
+
+
+print(formatar_placar(12347))
+'''),
+            "casos": [caso([funcao("formatar_placar"),
+                            regra(lambda o, n, c: _teste_placar(n),
+                                  "Teste: formatar_placar(12347) → '12.350', (1234567) → '1.234.570', (998) → '1.000', "
+                                  "(42) → '40' e (0) → '0'. O resultado precisa ser uma string.")])],
+        },
+        {
+            "titulo": "Novo recorde",
+            "enunciado": "Crie a classe `GameStats(settings)`:\n"
+                         "• no __init__: guarda settings, chama reset_stats() e cria high_score = 0\n"
+                         "• reset_stats(): ships_left = settings.ship_limit, score = 0, level = 1\n"
+                         "• check_high_score(): se score > high_score, high_score recebe score",
+            "inicial": "class GameStats:\n    pass\n",
+            "dica": "O high_score fica no __init__, fora do reset_stats(), para não zerar a cada partida.",
+            "solucao": _c('''
+class GameStats:
+    def __init__(self, settings):
+        self.settings = settings
+        self.reset_stats()
+        self.high_score = 0
+
+    def reset_stats(self):
+        self.ships_left = self.settings.ship_limit
+        self.score = 0
+        self.level = 1
+
+    def check_high_score(self):
+        if self.score > self.high_score:
+            self.high_score = self.score
+'''),
+            "casos": [caso([classe("GameStats"),
+                            regra(lambda o, n, c: _teste_recorde(n),
+                                  "Teste: começa com score 0, level 1, ships_left = ship_limit e high_score 0; com score 1500, "
+                                  "check_high_score() leva o recorde a 1500; reset_stats() zera score e level, mas mantém o "
+                                  "recorde; uma partida de 700 pontos não muda o recorde.")])],
+        },
+        {
+            "titulo": "Caça-bugs: o recorde que some",
+            "enunciado": "O jogador fez 1500 pontos, depois 700. O recorde deveria ser 1500, mas o programa mostra 700. "
+                         "Conserte a classe para mostrar 'Recorde: 1500'.",
+            "inicial": _c('''
+class GameStats:
+    def __init__(self):
+        self.reset_stats()
+
+    def reset_stats(self):
+        self.score = 0
+        self.high_score = 0
+
+    def check_high_score(self):
+        if self.score > self.high_score:
+            self.high_score = self.score
+
+
+stats = GameStats()
+stats.score = 1500
+stats.check_high_score()
+
+stats.reset_stats()      # nova partida
+stats.score = 700
+stats.check_high_score()
+print(f"Recorde: {stats.high_score}")
+''') + "\n",
+            "dica": "Qual método roda a cada nova partida? O recorde não deveria estar nele.",
+            "solucao": _c('''
+class GameStats:
+    def __init__(self):
+        self.reset_stats()
+        self.high_score = 0
+
+    def reset_stats(self):
+        self.score = 0
+
+    def check_high_score(self):
+        if self.score > self.high_score:
+            self.high_score = self.score
+
+
+stats = GameStats()
+stats.score = 1500
+stats.check_high_score()
+
+stats.reset_stats()      # nova partida
+stats.score = 700
+stats.check_high_score()
+print(f"Recorde: {stats.high_score}")
+'''),
+            "casos": [caso([saida("Recorde: 1500")])],
+        },
+    ],
+    "chefe": {
+        "titulo": "O Placar Eterno",
+        "enunciado": "Crie a classe `GameStats(settings)`, que guarda o recorde no arquivo 'recorde.json':\n\n"
+                     "• __init__: guarda settings, chama reset_stats(), cria game_active = False e carrega high_score do "
+                     "arquivo (se ele não existir, high_score = 0)\n"
+                     "• reset_stats(): ships_left = settings.ship_limit, score = 0, level = 1\n"
+                     "• registrar_abates(colisoes): soma settings.alien_points * len(aliens) para cada lista do dicionário "
+                     "e, se o score passar do recorde, atualiza o high_score\n"
+                     "• salvar_recorde(): grava o high_score no arquivo como JSON\n\n"
+                     "A simulação no fim do código já está pronta. O Verificar roda com o arquivo valendo 800, sem arquivo e valendo 5000.",
+        "inicial": _c('''
+import json
+from pathlib import Path
+
+
+class Settings:
+    def __init__(self):
+        self.ship_limit = 3
+        self.alien_points = 50
+
+
+class GameStats:
+    pass
+
+
+# --- Simulação de uma partida (não precisa mexer) ---
+settings = Settings()
+stats = GameStats(settings)
+print(f"Recorde carregado: {stats.high_score}")
+stats.registrar_abates({"bala1": ["alien1", "alien2"], "bala2": ["alien3"]})
+print(f"Pontos: {stats.score} | Recorde: {stats.high_score}")
+stats.registrar_abates({"bala3": ["alien"] * 15})
+print(f"Pontos: {stats.score} | Recorde: {stats.high_score}")
+stats.reset_stats()
+print(f"Nova partida: pontos {stats.score}, nível {stats.level}, vidas {stats.ships_left}, recorde {stats.high_score}")
+stats.salvar_recorde()
+''') + "\n",
+        "dica": "Para carregar: path = Path('recorde.json'); if path.exists(): self.high_score = json.loads(path.read_text()). "
+                "Para salvar: path.write_text(json.dumps(self.high_score)).",
+        "solucao": _c('''
+import json
+from pathlib import Path
+
+
+class Settings:
+    def __init__(self):
+        self.ship_limit = 3
+        self.alien_points = 50
+
+
+class GameStats:
+    def __init__(self, settings):
+        self.settings = settings
+        self.reset_stats()
+        self.game_active = False
+        self.path = Path("recorde.json")
+        if self.path.exists():
+            self.high_score = json.loads(self.path.read_text())
+        else:
+            self.high_score = 0
+
+    def reset_stats(self):
+        self.ships_left = self.settings.ship_limit
+        self.score = 0
+        self.level = 1
+
+    def registrar_abates(self, colisoes):
+        for aliens in colisoes.values():
+            self.score += self.settings.alien_points * len(aliens)
+        if self.score > self.high_score:
+            self.high_score = self.score
+
+    def salvar_recorde(self):
+        self.path.write_text(json.dumps(self.high_score))
+
+
+# --- Simulação de uma partida (não precisa mexer) ---
+settings = Settings()
+stats = GameStats(settings)
+print(f"Recorde carregado: {stats.high_score}")
+stats.registrar_abates({"bala1": ["alien1", "alien2"], "bala2": ["alien3"]})
+print(f"Pontos: {stats.score} | Recorde: {stats.high_score}")
+stats.registrar_abates({"bala3": ["alien"] * 15})
+print(f"Pontos: {stats.score} | Recorde: {stats.high_score}")
+stats.reset_stats()
+print(f"Nova partida: pontos {stats.score}, nível {stats.level}, vidas {stats.ships_left}, recorde {stats.high_score}")
+stats.salvar_recorde()
+'''),
+        "casos": _casos_placar_eterno(),
+    },
+}
+
+
+CAPITULOS = [CAP1, CAP2, CAP3, CAP4, CAP5, CAP6, CAP7, CAP8, CAP9, CAP10, CAP11, CAP12, CAP13, CAP14]

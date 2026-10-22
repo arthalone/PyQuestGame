@@ -15,7 +15,7 @@
     [450, "Aprendiz de Código"], [700, "Domador de Strings"], [1000, "Mestre das Listas"],
     [1300, "Cavaleiro do For"], [1650, "Guardião do If"], [2000, "Senhor dos Dicionários"],
     [2400, "Domador de Laços"], [2850, "Arquiteto de Funções"], [3350, "Mestre das Classes"],
-    [3900, "Pythonista"], [4500, "Lenda do Terminal"],
+    [3900, "Pythonista"], [4400, "Piloto Estelar"], [4850, "Lenda do Terminal"],
   ];
   const XP = { licao: 10, quiz: 50, desafio: 30, chefe: 100, bonus: 10, solucao: 5 };
   const APROVACAO = 0.7;
@@ -255,7 +255,7 @@
   const Py = {
     w: null, seq: 0, pend: new Map(), pronto: false, aquecendo: null,
     novo() {
-      this.w = new Worker("worker.js");
+      this.w = new Worker("worker.js?v=3");
       this.w.onmessage = (e) => {
         const { id, ok, r, erro } = e.data;
         const p = this.pend.get(id);
@@ -569,8 +569,10 @@
       ? `<div class="cartao proximo"><div class="espaco"><div class="mini verde">Próximo passo</div><h3>${esc(prox[0])}</h3></div><a class="btn" href="${prox[1]}">Continuar ▶</a></div>`
       : `<div class="cartao proximo"><h3 style="color:var(--verde)">Você completou a jornada! Treine no Relâmpago e no Laboratório.</h3></div>`;
     html += `<h2 style="margin:6px 0 12px">Mapa da Jornada</h2>`;
+    const PARTES = { 1: "Parte I · Fundamentos", 12: "Parte II · Projeto Alien Invasion" };
     for (const c of CAPS) {
       const n = c.num, lib = capLiberado(n), ok = feito(`c${n}-chefe`), f = fracCap(n);
+      if (PARTES[n]) html += `<div class="mini roxo" style="margin:18px 0 8px">${PARTES[n]}</div>`;
       html += `<div class="capcard ${ok ? "ok" : lib ? "" : "trancado"}"><div class="faixa"></div><div class="corpo">
         <div class="num">${n}</div>
         <div class="info"><h2>${esc(c.titulo)}</h2><div class="mudo">${esc(c.subtitulo)}</div>
@@ -1033,7 +1035,7 @@
   async function iniciar() {
     carregar(CHAVE_CONVIDADO);
     try {
-      const r = await fetch("conteudo.json?v=2");
+      const r = await fetch("conteudo.json?v=3");
       CAPS = await r.json();
     } catch {
       app.innerHTML = `<p>Não consegui carregar o conteúdo. Recarregue a página.</p>`;

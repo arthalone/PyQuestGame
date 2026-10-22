@@ -1,4 +1,4 @@
-PyQuest - Python gamificado (capítulos 1 a 11 do Curso Intensivo de Python)
+PyQuest - Python gamificado (capítulos 1 a 14 do Curso Intensivo de Python)
 ==========================================================================
 
 COMO GERAR O EXECUTÁVEL (Windows)
@@ -10,11 +10,11 @@ QUER JOGAR SEM GERAR O .EXE?
 Dê dois cliques em Jogar_sem_exe.bat (ou rode: python pyquest.py).
 
 O QUE TEM NO APP
-- 11 capítulos: do print() até classes, arquivos, exceções e testes.
-- 38 lições com exemplos executáveis.
-- 11 quizzes (78 perguntas), com combos e estrelas.
-- 59 desafios de código corrigidos automaticamente + 11 chefões.
-- XP, 14 níveis, sequência de dias, bônus diário e 14 conquistas.
+- 14 capítulos: do print() até classes, arquivos, exceções, testes e o projeto Alien Invasion.
+- 50 lições com exemplos executáveis.
+- 14 quizzes (99 perguntas), com combos e estrelas.
+- 77 desafios de código corrigidos automaticamente + 14 chefões.
+- XP, 15 níveis, sequência de dias, bônus diário e 14 conquistas.
 - Desafio Relâmpago (60 s contra o relógio) e Laboratório livre.
 - Dica (reduz XP pela metade) e solução (liberada após 3 tentativas).
 
@@ -23,4 +23,4 @@ Seu progresso fica salvo em %APPDATA%\PyQuest\progresso.json
 ARQUIVOS
 - pyquest.py   -> interface e regras do jogo
 - conteudo.py  -> lições, quizzes e desafios (fácil de editar e ampliar)
-- motor.py     -> executa e corrige o código do aluno
+- motor.py     -> executa e corrige o código do aluno (inclui o "pygame de treino" dos caps. 12 a 14)

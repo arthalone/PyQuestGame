@@ -35,6 +35,328 @@ DICAS_ERRO = {
 }
 
 
+# ---------------------------------------------------------------------------
+# "pygame de treino": as mesmas peças do pygame usadas no Alien Invasion
+# (Rect, Sprite, Group, eventos e constantes), mas sem janela nem gráficos.
+# Assim o aluno pratica a LÓGICA do jogo aqui e roda o mesmo código no
+# pygame de verdade no PC.
+# ---------------------------------------------------------------------------
+
+class _Rect:
+    def __init__(self, *args):
+        if len(args) == 1:
+            args = tuple(args[0]) if not isinstance(args[0], _Rect) else (
+                args[0].x, args[0].y, args[0].width, args[0].height)
+        if len(args) == 2:
+            (x, y), (w, h) = args
+        elif len(args) == 4:
+            x, y, w, h = args
+        else:
+            raise TypeError("Rect precisa de (x, y, largura, altura)")
+        object.__setattr__(self, "_d", [int(x), int(y), int(w), int(h)])
+
+    # leitura/escrita dos atributos de posição, como no pygame
+    def __getattr__(self, nome):
+        x, y, w, h = self._d
+        tab = {
+            "x": x, "y": y, "left": x, "top": y, "width": w, "height": h, "w": w, "h": h,
+            "right": x + w, "bottom": y + h, "centerx": x + w // 2, "centery": y + h // 2,
+            "center": (x + w // 2, y + h // 2), "topleft": (x, y), "topright": (x + w, y),
+            "bottomleft": (x, y + h), "bottomright": (x + w, y + h),
+            "midtop": (x + w // 2, y), "midbottom": (x + w // 2, y + h),
+            "midleft": (x, y + h // 2), "midright": (x + w, y + h // 2), "size": (w, h),
+        }
+        if nome in tab:
+            return tab[nome]
+        raise AttributeError(f"'Rect' não tem o atributo '{nome}'")
+
+    def __setattr__(self, nome, v):
+        d = self._d
+        w, h = d[2], d[3]
+        if nome in ("x", "left"):
+            d[0] = int(v)
+        elif nome in ("y", "top"):
+            d[1] = int(v)
+        elif nome in ("width", "w"):
+            d[2] = int(v)
+        elif nome in ("height", "h"):
+            d[3] = int(v)
+        elif nome == "right":
+            d[0] = int(v) - w
+        elif nome == "bottom":
+            d[1] = int(v) - h
+        elif nome == "centerx":
+            d[0] = int(v) - w // 2
+        elif nome == "centery":
+            d[1] = int(v) - h // 2
+        elif nome == "size":
+            d[2], d[3] = int(v[0]), int(v[1])
+        elif nome in ("center", "topleft", "topright", "bottomleft", "bottomright",
+                      "midtop", "midbottom", "midleft", "midright"):
+            px, py = v
+            hx = {"center": w // 2, "topleft": 0, "topright": w, "bottomleft": 0, "bottomright": w,
+                  "midtop": w // 2, "midbottom": w // 2, "midleft": 0, "midright": w}[nome]
+            hy = {"center": h // 2, "topleft": 0, "topright": 0, "bottomleft": h, "bottomright": h,
+                  "midtop": 0, "midbottom": h, "midleft": h // 2, "midright": h // 2}[nome]
+            d[0], d[1] = int(px) - hx, int(py) - hy
+        else:
+            raise AttributeError(f"'Rect' não tem o atributo '{nome}'")
+
+    def colliderect(self, o):
+        return (self.width > 0 and self.height > 0 and o.width > 0 and o.height > 0
+                and self.left < o.right and o.left < self.right
+                and self.top < o.bottom and o.top < self.bottom)
+
+    def collidepoint(self, *p):
+        px, py = p[0] if len(p) == 1 else p
+        return self.left <= px < self.right and self.top <= py < self.bottom
+
+    def copy(self):
+        return _Rect(*self._d)
+
+    def move(self, dx, dy):
+        return _Rect(self.x + dx, self.y + dy, self.width, self.height)
+
+    def move_ip(self, dx, dy):
+        self._d[0] += int(dx)
+        self._d[1] += int(dy)
+
+    def __eq__(self, o):
+        try:
+            return list(self._d) == [int(v) for v in (o._d if isinstance(o, _Rect) else o)]
+        except TypeError:
+            return False
+
+    def __iter__(self):
+        return iter(self._d)
+
+    def __repr__(self):
+        return "<rect({}, {}, {}, {})>".format(*self._d)
+
+    def __deepcopy__(self, memo):
+        return self.copy()
+
+
+class _Surface:
+    def __init__(self, size=(1200, 800), *a, **k):
+        self._w, self._h = int(size[0]), int(size[1])
+
+    def get_rect(self, **k):
+        r = _Rect(0, 0, self._w, self._h)
+        for nome, v in k.items():
+            setattr(r, nome, v)
+        return r
+
+    def get_width(self):
+        return self._w
+
+    def get_height(self):
+        return self._h
+
+    def get_size(self):
+        return (self._w, self._h)
+
+    def fill(self, *a, **k):
+        pass
+
+    def blit(self, *a, **k):
+        pass
+
+
+class _Sprite:
+    def __init__(self, *grupos):
+        self.__g = set()
+        for g in grupos:
+            g.add(self)
+
+    def _grupos(self):
+        try:
+            return self.__g
+        except AttributeError:  # o aluno esqueceu de chamar super().__init__()
+            object.__setattr__(self, "_Sprite__g", set())
+            return self.__g
+
+    def update(self, *a, **k):
+        pass
+
+    def kill(self):
+        for g in list(self._grupos()):
+            g.remove(self)
+
+    def alive(self):
+        return bool(self._grupos())
+
+    def groups(self):
+        return list(self._grupos())
+
+
+class _Group:
+    def __init__(self, *sprites):
+        self._s = []
+        self.add(*sprites)
+
+    def add(self, *sprites):
+        for s in sprites:
+            if isinstance(s, (list, tuple, _Group)):
+                self.add(*s)
+            elif s not in self._s:
+                self._s.append(s)
+                s._grupos().add(self)
+
+    def remove(self, *sprites):
+        for s in sprites:
+            if s in self._s:
+                self._s.remove(s)
+                s._grupos().discard(self)
+
+    def has(self, *sprites):
+        return all(s in self._s for s in sprites)
+
+    def sprites(self):
+        return list(self._s)
+
+    def copy(self):
+        return _Group(*self._s)
+
+    def empty(self):
+        self.remove(*list(self._s))
+
+    def update(self, *a, **k):
+        for s in list(self._s):
+            s.update(*a, **k)
+
+    def draw(self, *a, **k):
+        pass
+
+    def __iter__(self):
+        return iter(list(self._s))
+
+    def __len__(self):
+        return len(self._s)
+
+    def __bool__(self):
+        return bool(self._s)
+
+    def __contains__(self, s):
+        return s in self._s
+
+    def __repr__(self):
+        return f"<Group({len(self._s)} sprites)>"
+
+    def __hash__(self):
+        return id(self)
+
+
+def _groupcollide(g1, g2, dokill1, dokill2):
+    res = {}
+    for a in list(g1):
+        atingidos = [b for b in list(g2) if a.rect.colliderect(b.rect)]
+        if atingidos:
+            res[a] = atingidos
+    for a, bs in res.items():
+        if dokill1:
+            a.kill()
+        if dokill2:
+            for b in bs:
+                b.kill()
+    return res
+
+
+def _spritecollideany(sprite, grupo):
+    for b in list(grupo):
+        if sprite.rect.colliderect(b.rect):
+            return b
+    return None
+
+
+class _Event:
+    def __init__(self, tipo, dic=None, **attrs):
+        self.type = tipo
+        self.__dict__.update(dic or {})
+        self.__dict__.update(attrs)
+
+    def __repr__(self):
+        extra = ", ".join(f"{k}={v!r}" for k, v in self.__dict__.items() if k != "type")
+        return f"<Event({self.type}{', ' + extra if extra else ''})>"
+
+
+def _criar_pygame():
+    import types
+    pg = types.ModuleType("pygame")
+    pg.__doc__ = "pygame de treino do PyQuest (sem janela)."
+    pg.__file__ = "pygame_de_treino"
+    pg.Rect = _Rect
+    pg.Surface = _Surface
+    pg.QUIT, pg.KEYDOWN, pg.KEYUP, pg.MOUSEBUTTONDOWN = 256, 768, 769, 1025
+    pg.K_LEFT, pg.K_RIGHT, pg.K_UP, pg.K_DOWN = 1073741904, 1073741903, 1073741906, 1073741905
+    pg.K_SPACE, pg.K_q, pg.K_p, pg.K_RETURN, pg.K_ESCAPE = 32, 113, 112, 13, 27
+    pg.FULLSCREEN = 1
+    pg.init = lambda: (6, 0)
+    pg.quit = lambda: None
+
+    sprite = types.ModuleType("pygame.sprite")
+    sprite.Sprite, sprite.Group = _Sprite, _Group
+    sprite.groupcollide, sprite.spritecollideany = _groupcollide, _spritecollideany
+    pg.sprite = sprite
+
+    event = types.ModuleType("pygame.event")
+    event.Event = _Event
+    event.get = lambda *a, **k: []
+    pg.event = event
+
+    display = types.ModuleType("pygame.display")
+    display.set_mode = lambda size=(1200, 800), *a, **k: _Surface(size if size and size[0] else (1200, 800))
+    display.set_caption = lambda *a, **k: None
+    display.flip = lambda *a, **k: None
+    pg.display = display
+
+    image = types.ModuleType("pygame.image")
+    image.load = lambda *a, **k: _Surface((60, 48))
+    pg.image = image
+
+    draw = types.ModuleType("pygame.draw")
+    draw.rect = lambda *a, **k: None
+    pg.draw = draw
+
+    mouse = types.ModuleType("pygame.mouse")
+    mouse.get_pos = lambda: (0, 0)
+    mouse.set_visible = lambda *a: None
+    pg.mouse = mouse
+
+    class _Clock:
+        def tick(self, *a):
+            return 16
+    tempo = types.ModuleType("pygame.time")
+    tempo.Clock = _Clock
+    pg.time = tempo
+
+    class _Font:
+        def __init__(self, *a, **k):
+            pass
+
+        def render(self, texto, *a, **k):
+            return _Surface((len(str(texto)) * 12, 30))
+    font = types.ModuleType("pygame.font")
+    font.SysFont = font.Font = _Font
+    pg.font = font
+    return pg
+
+
+for _cls, _nome, _mod in ((_Rect, "Rect", "pygame"), (_Surface, "Surface", "pygame"),
+                          (_Sprite, "Sprite", "pygame.sprite"), (_Group, "Group", "pygame.sprite"),
+                          (_Event, "Event", "pygame.event")):
+    _cls.__name__ = _cls.__qualname__ = _nome
+    _cls.__module__ = _mod
+
+_PYGAME = _criar_pygame()
+
+
+def _instalar_pygame():
+    sys.modules["pygame"] = _PYGAME
+    for sub in ("sprite", "event", "display", "image", "draw", "mouse", "time", "font"):
+        sys.modules["pygame." + sub] = getattr(_PYGAME, sub)
+
+
 class _Saida(io.TextIOBase):
     """Guarda duas versões da saída: a da tela (com as perguntas do input) e a limpa (só prints)."""
 
@@ -119,6 +441,7 @@ def executar(codigo, ctx=None):
         cwd_antigo = None
 
     sys.modules.pop("this", None)  # para "import this" mostrar o Zen toda vez
+    _instalar_pygame()
     passos = [0]
     antigo_out = sys.stdout
     erro = None

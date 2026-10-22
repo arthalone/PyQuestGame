@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 PyQuest: aprenda Python jogando.
-Baseado na sequência dos capítulos 1 a 11 do livro "Curso Intensivo de Python" (Eric Matthes).
+Baseado na sequência dos capítulos 1 a 14 do livro "Curso Intensivo de Python" (Eric Matthes).
 
 Execute com:  python pyquest.py
 """
@@ -47,7 +47,7 @@ NIVEIS = [
     (450, "Aprendiz de Código"), (700, "Domador de Strings"), (1000, "Mestre das Listas"),
     (1300, "Cavaleiro do For"), (1650, "Guardião do If"), (2000, "Senhor dos Dicionários"),
     (2400, "Domador de Laços"), (2850, "Arquiteto de Funções"), (3350, "Mestre das Classes"),
-    (3900, "Pythonista"), (4500, "Lenda do Terminal"),
+    (3900, "Pythonista"), (4400, "Piloto Estelar"), (4850, "Lenda do Terminal"),
 ]
 
 XP_LICAO = 10
@@ -609,7 +609,7 @@ class App(tk.Tk):
 
         rod = tk.Frame(sb, bg=C["painel"], padx=20, pady=16)
         rod.pack(side="bottom", fill="x")
-        self.lbl(rod, "Baseado nos capítulos 1–11 do livro Curso Intensivo de Python (Eric Matthes)", "p", C["mudo"],
+        self.lbl(rod, "Baseado nos capítulos 1–14 do livro Curso Intensivo de Python (Eric Matthes)", "p", C["mudo"],
                  wrap=220).pack(anchor="w")
 
     # ---------------- tela: mapa ----------------
@@ -644,7 +644,10 @@ class App(tk.Tk):
             self.lbl(cont, "Você completou a jornada! Use o Relâmpago e o Laboratório para continuar treinando.",
                      "h3", C["verde"], wrap=760).pack(anchor="w")
 
+        partes = {1: "PARTE I · FUNDAMENTOS", 12: "PARTE II · PROJETO ALIEN INVASION"}
         for c in CAPITULOS:
+            if c["num"] in partes:
+                self.lbl(f, partes[c["num"]], "mini", C["roxo"]).pack(anchor="w", pady=(14, 2))
             self._card_cap(f, c)
 
     def _card_cap(self, master, c):
