@@ -1,6 +1,6 @@
 // Web Worker: roda o Python (Pyodide) fora da tela principal.
 const PYODIDE = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/";
-const VERSAO = "4";
+const VERSAO = "5";
 let ponte = null;
 let iniciando = null;
 let pyodide = null;
@@ -20,7 +20,7 @@ async function iniciar() {
       importScripts(PYODIDE + "pyodide.js");
       const py = await loadPyodide({ indexURL: PYODIDE });
       pyodide = py;
-      for (const nome of ["conteudo", "motor", "ponte"]) {
+      for (const nome of ["django_treino", "conteudo", "motor", "ponte"]) {
         const r = await fetch(`py/${nome}.py?v=${VERSAO}`);
         if (!r.ok) throw new Error(`Não consegui carregar py/${nome}.py`);
         py.FS.writeFile(`/home/pyodide/${nome}.py`, await r.text());

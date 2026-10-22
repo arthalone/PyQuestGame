@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Conteúdo do PyQuest: lições, quizzes e desafios dos capítulos 1 a 17,
+Conteúdo do PyQuest: lições, quizzes e desafios dos capítulos 1 a 20,
 seguindo a sequência de temas do livro "Curso Intensivo de Python" (Eric Matthes).
 Os textos e exercícios são originais, criados para este app.
 """
@@ -5606,5 +5606,2396 @@ print(ranking_linguagem("rust"))
 }
 
 
+# ---------------------------------------------------------------------------
+# PARTE II: PROJETO APLICAÇÕES WEB, o Learning Log com Django (capítulos 18 a 20)
+# Usa o "Django de treino" (django_treino.py): models em memória, URLs, views,
+# templates no dicionário TEMPLATES e um Client que abre as páginas.
+# ---------------------------------------------------------------------------
+
+
+def _djm(nome):
+    import sys
+    return sys.modules[nome]
+
+
+def _User():
+    return _djm("django.contrib.auth.models").User
+
+
+def _cliente(ns, usuario=None):
+    c = _djm("django.test").Client(ns)
+    if usuario is not None:
+        c.force_login(usuario)
+    return c
+
+
+def _limpar_banco(ns):
+    for v in list(ns.values()):
+        if isinstance(v, type) and hasattr(v, "_dados") and hasattr(v, "_campos"):
+            v._dados.clear()
+            v._prox_id[0] = 1
+    U = _User()
+    U._dados.clear()
+    U._prox_id[0] = 1
+
+
+def _usuarios():
+    U = _User()
+    return U.objects.create_user("ana", password="senha-da-ana-1"), U.objects.create_user("bia", password="senha-da-bia-2")
+
+
+def _campo(ns, model, nome):
+    return ns[model]._campos.get(nome)
+
+
+def _tipo(c):
+    return type(c).__name__ if c is not None else None
+
+
+# --------------------------- código base reaproveitado ---------------------------
+
+_MODELS_18 = '''from django.db import models
+
+
+class Topic(models.Model):
+    """Um assunto sobre o qual o usuário está aprendendo."""
+    text = models.CharField(max_length=200)
+    date_added = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.text
+
+
+class Entry(models.Model):
+    """Algo específico aprendido sobre um assunto."""
+    topic = models.ForeignKey(Topic, on_delete=models.CASCADE)
+    text = models.TextField()
+    date_added = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name_plural = "entries"
+
+    def __str__(self):
+        return f"{self.text[:50]}..."
+'''
+
+_MODELS_19 = '''from django.db import models
+from django.contrib.auth.models import User
+
+
+class Topic(models.Model):
+    text = models.CharField(max_length=200)
+    date_added = models.DateTimeField(auto_now_add=True)
+    owner = models.ForeignKey(User, on_delete=models.CASCADE)
+
+    def __str__(self):
+        return self.text
+
+
+class Entry(models.Model):
+    topic = models.ForeignKey(Topic, on_delete=models.CASCADE)
+    text = models.TextField()
+    date_added = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name_plural = "entries"
+
+    def __str__(self):
+        return f"{self.text[:50]}..."
+'''
+
+# ------------------------------ testes do cap. 18 ------------------------------
+
+
+def _teste_model_topic(ns):
+    t = _campo(ns, "Topic", "text")
+    d = _campo(ns, "Topic", "date_added")
+    if _tipo(t) != "CharField" or t.max_length != 200:
+        return False
+    if _tipo(d) != "DateTimeField" or not d.auto_now_add:
+        return False
+    _limpar_banco(ns)
+    obj = ns["Topic"].objects.create(text="Xadrez")
+    return str(obj) == "Xadrez" and obj.date_added is not None and obj.id == 1
+
+
+def _teste_model_entry(ns):
+    T, E = ns["Topic"], ns["Entry"]
+    fk = _campo(ns, "Entry", "topic")
+    if _tipo(fk) != "ForeignKey" or fk.alvo() is not T or fk.on_delete != "CASCADE":
+        return False
+    if _tipo(_campo(ns, "Entry", "text")) != "TextField":
+        return False
+    if E._meta.verbose_name_plural != "entries":
+        return False
+    _limpar_banco(ns)
+    t = T.objects.create(text="Escalada")
+    curta = E.objects.create(topic=t, text="Use sapatilhas justas.")
+    longa = E.objects.create(topic=t, text="A" * 60)
+    if str(curta) != "Use sapatilhas justas." or str(longa) != "A" * 50 + "...":
+        return False
+    if t.entry_set.count() != 2:
+        return False
+    t.delete()
+    return E.objects.count() == 0
+
+
+def _teste_index(ns):
+    _limpar_banco(ns)
+    r = _cliente(ns).get("/")
+    return (r.status_code == 200 and "learning_logs/index.html" in r.templates
+            and "<h1>Learning Log</h1>" in r.content)
+
+
+def _teste_lista_topicos(ns):
+    _limpar_banco(ns)
+    c = _cliente(ns)
+    r = c.get("/topics/")
+    if r.status_code != 200 or "Nenhum tópico ainda." not in r.content:
+        return False
+    T = ns["Topic"]
+    T.objects.create(text="Xadrez")
+    T.objects.create(text="Escalada")
+    r = c.get("/topics/")
+    return ("Nenhum tópico ainda." not in r.content and "<li>Xadrez</li>" in r.content
+            and "<li>Escalada</li>" in r.content and r.content.index("Xadrez") < r.content.index("Escalada"))
+
+
+def _teste_diario(ns):
+    _limpar_banco(ns)
+    T, E = ns["Topic"], ns["Entry"]
+    t1 = T.objects.create(text="Xadrez")
+    t2 = T.objects.create(text="Escalada")
+    E.objects.create(topic=t1, text="Abertura italiana.")
+    E.objects.create(topic=t1, text="Controle o centro do tabuleiro.")
+    E.objects.create(topic=t2, text="Aqueça antes de subir.")
+    c = _cliente(ns)
+    r = c.get("/topics/")
+    if r.status_code != 200 or 'href="/topics/1/"' not in r.content or 'href="/topics/2/"' not in r.content:
+        return False
+    if "Xadrez" not in r.content or 'href="/topics/"' not in r.content:
+        return False
+    r = c.get("/topics/1/")
+    if r.status_code != 200 or "Xadrez" not in r.content or 'href="/topics/"' not in r.content:
+        return False
+    if "Aqueça" in r.content:
+        return False
+    a, b = r.content.find("Controle o centro"), r.content.find("Abertura italiana")
+    if a < 0 or b < 0 or a > b:
+        return False
+    return "02/03/2026" in r.content
+
+
+# ------------------------------ testes do cap. 19 ------------------------------
+
+
+def _teste_topicform(ns):
+    _limpar_banco(ns)
+    F, T = ns["TopicForm"], ns["Topic"]
+    if getattr(F.Meta, "model", None) is not T or list(F.Meta.fields) != ["text"]:
+        return False
+    if getattr(F.Meta, "labels", {}).get("text") != "":
+        return False
+    f = F(data={"text": "Xadrez"})
+    if not f.is_valid():
+        return False
+    f.save()
+    return T.objects.count() == 1 and not F(data={"text": ""}).is_valid() and "<label" not in str(F())
+
+
+def _teste_new_topic(ns):
+    _limpar_banco(ns)
+    T = ns["Topic"]
+    c = _cliente(ns)
+    r = c.get("/new_topic/")
+    if r.status_code != 200 or 'name="text"' not in r.content or "csrfmiddlewaretoken" not in r.content:
+        return False
+    r = c.post("/new_topic/", {"text": "Xadrez"})
+    if r.status_code != 302 or r.url != "/topics/" or T.objects.count() != 1:
+        return False
+    r = c.post("/new_topic/", {"text": "   "})
+    return r.status_code == 200 and T.objects.count() == 1 and "obrigatório" in r.content
+
+
+def _teste_new_entry(ns):
+    _limpar_banco(ns)
+    T, E = ns["Topic"], ns["Entry"]
+    t = T.objects.create(text="Xadrez")
+    c = _cliente(ns)
+    r = c.get(f"/new_entry/{t.id}/")
+    if r.status_code != 200 or 'name="text"' not in r.content or "Xadrez" not in r.content:
+        return False
+    r = c.post(f"/new_entry/{t.id}/", {"text": "O bispo anda na diagonal."})
+    if r.status_code != 302 or r.url != f"/topics/{t.id}/":
+        return False
+    e = E.objects.first()
+    return e is not None and e.topic == t and e.text == "O bispo anda na diagonal."
+
+
+def _teste_edit_entry(ns):
+    _limpar_banco(ns)
+    T, E = ns["Topic"], ns["Entry"]
+    t = T.objects.create(text="Xadrez")
+    e = E.objects.create(topic=t, text="Texto antigo com erro.")
+    c = _cliente(ns)
+    r = c.get(f"/edit_entry/{e.id}/")
+    if r.status_code != 200 or "Texto antigo com erro." not in r.content:
+        return False
+    r = c.post(f"/edit_entry/{e.id}/", {"text": "Texto corrigido."})
+    if r.status_code != 302 or r.url != f"/topics/{t.id}/":
+        return False
+    return E.objects.count() == 1 and E.objects.get(id=e.id).text == "Texto corrigido."
+
+
+def _teste_register(ns):
+    _limpar_banco(ns)
+    U = _User()
+    c = _cliente(ns)
+    r = c.get("/users/register/")
+    if r.status_code != 200 or 'name="password1"' not in r.content:
+        return False
+    r = c.post("/users/register/", {"username": "ana", "password1": "senha-forte-1", "password2": "outra-senha-9"})
+    if r.status_code != 200 or U.objects.count() != 0:
+        return False
+    r = c.post("/users/register/", {"username": "ana", "password1": "senha-forte-1", "password2": "senha-forte-1"})
+    if r.status_code != 302 or r.url != "/" or U.objects.count() != 1:
+        return False
+    return c.user is not None and c.user.username == "ana"
+
+
+def _teste_guardiao(ns):
+    _limpar_banco(ns)
+    T = ns["Topic"]
+    ana, bia = _usuarios()
+    ta = T.objects.create(text="Xadrez da Ana", owner=ana)
+    tb = T.objects.create(text="Diário da Bia", owner=bia)
+    anonimo = _cliente(ns)
+    r = anonimo.get("/topics/")
+    if r.status_code != 302 or not r.url.startswith("/users/login/"):
+        return False
+    if anonimo.get(f"/topics/{ta.id}/").status_code != 302:
+        return False
+    c = _cliente(ns, ana)
+    r = c.get("/topics/")
+    if r.status_code != 200 or "Xadrez da Ana" not in r.content or "Diário da Bia" in r.content:
+        return False
+    if c.get(f"/topics/{ta.id}/").status_code != 200 or c.get(f"/topics/{tb.id}/").status_code != 404:
+        return False
+    r = c.post("/new_topic/", {"text": "Escalada"})
+    novo = T.objects.filter(text="Escalada").first()
+    if r.status_code != 302 or novo is None or novo.owner != ana:
+        return False
+    r = _cliente(ns, bia).get("/topics/")
+    return "Escalada" not in r.content and "Diário da Bia" in r.content
+
+
+def _teste_vazamento(ns):
+    _limpar_banco(ns)
+    T = ns["Topic"]
+    ana, bia = _usuarios()
+    T.objects.create(text="Segredo da Ana", owner=ana)
+    T.objects.create(text="Plano da Bia", owner=bia)
+    r = _cliente(ns, bia).get("/topics/")
+    return r.status_code == 200 and "Plano da Bia" in r.content and "Segredo da Ana" not in r.content
+
+
+# ------------------------------ testes do cap. 20 ------------------------------
+
+
+def _teste_navbar(ns):
+    _limpar_banco(ns)
+    r = _cliente(ns).get("/")
+    h = r.content
+    return (r.status_code == 200 and 'class="navbar' in h and 'href="/"' in h and 'href="/topics/"' in h
+            and "Acompanhe o que você aprende." in h)
+
+
+def _teste_config(ns):
+    f = ns["carregar_config"]
+    a = f({"DEBUG": "True", "ALLOWED_HOSTS": "meusite.com, www.meusite.com", "SECRET_KEY": "x" * 40})
+    b = f({"SECRET_KEY": "y" * 40})
+    c = f({"DEBUG": "False", "ALLOWED_HOSTS": "", "SECRET_KEY": "z"})
+    try:
+        f({"DEBUG": "True"})
+        sem_chave = False
+    except KeyError:
+        sem_chave = True
+    return (a == {"DEBUG": True, "ALLOWED_HOSTS": ["meusite.com", "www.meusite.com"], "SECRET_KEY": "x" * 40}
+            and b == {"DEBUG": False, "ALLOWED_HOSTS": [], "SECRET_KEY": "y" * 40}
+            and c["DEBUG"] is False and c["ALLOWED_HOSTS"] == [] and sem_chave)
+
+
+def _teste_404(ns):
+    _limpar_banco(ns)
+    ns["Topic"].objects.create(text="Xadrez")
+    c = _cliente(ns)
+    ok = c.get("/topics/1/")
+    r = c.get("/topics/99/")
+    return (ok.status_code == 200 and "Xadrez" in ok.content and r.status_code == 404
+            and "Página não encontrada" in r.content and 'class="navbar' in r.content)
+
+
+def _teste_checklist(ns):
+    f = ns["checar_deploy"]
+    boa = {"DEBUG": False, "ALLOWED_HOSTS": ["meusite.com"], "SECRET_KEY": "k" * 50}
+    if f(boa) != []:
+        return False
+    ruim = {"DEBUG": True, "ALLOWED_HOSTS": ["*"], "SECRET_KEY": "django-insecure-" + "a" * 40}
+    if f(ruim) != ["DEBUG ligado", "ALLOWED_HOSTS inseguro", "SECRET_KEY fraca"]:
+        return False
+    if f({"DEBUG": False, "ALLOWED_HOSTS": [], "SECRET_KEY": "curta"}) != ["ALLOWED_HOSTS inseguro", "SECRET_KEY fraca"]:
+        return False
+    return f({"DEBUG": True, "ALLOWED_HOSTS": ["a.com"], "SECRET_KEY": "s" * 30}) == ["DEBUG ligado"]
+
+
+def _teste_no_ar(ns):
+    from_http = _djm("django.http")
+    _limpar_banco(ns)
+    T = ns["Topic"]
+    ana, bia = _usuarios()
+    ta = T.objects.create(text="Xadrez da Ana", owner=ana)
+    tb = T.objects.create(text="Diário da Bia", owner=bia)
+    chk = ns["check_topic_owner"]
+    try:
+        chk(tb, ana)
+        return False
+    except from_http.Http404:
+        pass
+    if chk(ta, ana) is not None:
+        return False
+    c = _cliente(ns, ana)
+    r = c.get("/topics/")
+    if r.status_code != 200 or "Xadrez da Ana" not in r.content or "Diário da Bia" in r.content:
+        return False
+    if 'class="navbar' not in r.content:
+        return False
+    for url in (f"/topics/{tb.id}/", "/topics/999/"):
+        r = c.get(url)
+        if r.status_code != 404 or "Página não encontrada" not in r.content:
+            return False
+    r = c.get(f"/topics/{ta.id}/")
+    return r.status_code == 200 and "Xadrez da Ana" in r.content
+
+
+def _casos_no_ar():
+    casos = []
+    for env, debug in (({"DEBUG": "False"}, False), ({"DEBUG": "True"}, True), ({"DEBUG": None}, False)):
+        conds = [funcao("check_topic_owner"),
+                 regra(lambda o, n, c, debug=debug: n.get("DEBUG") is debug,
+                       f"DEBUG deveria ser {debug} quando a variável de ambiente DEBUG é "
+                       f"{env['DEBUG'] if env['DEBUG'] is not None else 'inexistente'!r}. Compare o texto com 'True'.")]
+        if env["DEBUG"] is None:
+            conds.append(regra(lambda o, n, c: _teste_no_ar(n),
+                               "Teste com ana e bia: /topics/ mostra só os tópicos de quem está logado, com a navbar; "
+                               "o tópico de outra pessoa e um tópico inexistente dão 404 com o template 404.html "
+                               "('Página não encontrada'); check_topic_owner levanta Http404 quando o dono é outro."))
+        casos.append(caso(conds, {"__env__": env}))
+    return casos
+
+
+def _casos_debug():
+    casos = []
+    for env, msg in (({"DEBUG": "False"}, "Debug desligado. Tudo certo!"),
+                     ({"DEBUG": "True"}, "CUIDADO: debug ligado!"),
+                     ({"DEBUG": None}, "Debug desligado. Tudo certo!")):
+        casos.append(caso([saida(msg)], {"__env__": env}))
+    return casos
+
+
+# ---------------------------------------------------------------------------
+# CAPÍTULO 18: Começando com Django
+# ---------------------------------------------------------------------------
+
+CAP18 = {
+    "num": 18,
+    "titulo": "Web: Começando com Django",
+    "subtitulo": "Models, shell, URLs, views e templates do Learning Log",
+    "licoes": [
+        {
+            "titulo": "O projeto Learning Log",
+            "texto": [
+                "O último projeto do livro é um **app web**: o **Learning Log**, um diário onde cada pessoa registra os "
+                "**tópicos** que está estudando e as **anotações** sobre cada um.",
+                "Ele usa o **Django**, um framework que cuida das partes chatas de um site: banco de dados, URLs, "
+                "páginas, formulários e contas de usuário.",
+                "## No seu PC",
+                "No projeto real, você cria um ambiente virtual (`python -m venv ll_env`), instala o Django "
+                "(`pip install django`), cria o projeto (`django-admin startproject ll_project .`) e o app "
+                "(`python manage.py startapp learning_logs`). Cada parte fica num arquivo: `models.py`, `views.py`, "
+                "`urls.py` e a pasta `templates/`. `python manage.py runserver` abre o site em http://localhost:8000.",
+                "## Aqui no PyQuest",
+                "O PyQuest traz um **Django de treino**, com as mesmas peças e os mesmos nomes, mas tudo num arquivo só:",
+                "• os templates ficam num dicionário `TEMPLATES` (nome do arquivo → texto do template);",
+                "• o banco de dados fica na memória e não precisa de migrações;",
+                "• `Client()` é um navegador de teste: `Client().get('/')` abre a página e devolve a resposta.",
+            ],
+            "exemplo": _c('''
+from django.http import HttpResponse
+from django.urls import path
+from django.test import Client
+
+
+def index(request):
+    """A página inicial do Learning Log."""
+    return HttpResponse("<h1>Learning Log</h1><p>Seu diário de estudos.</p>")
+
+
+urlpatterns = [
+    path("", index, name="index"),
+]
+
+navegador = Client()
+resposta = navegador.get("/")
+print("Status:", resposta.status_code)
+print(resposta.content)
+'''),
+        },
+        {
+            "titulo": "Models: os dados do app",
+            "texto": [
+                "Um **model** diz ao Django como guardar um tipo de dado. É uma classe que herda de `models.Model`, e cada "
+                "atributo vira uma coluna no banco.",
+                "• `models.CharField(max_length=200)`: texto curto, com limite.",
+                "• `models.TextField()`: texto longo, sem limite.",
+                "• `models.DateTimeField(auto_now_add=True)`: data e hora preenchidas sozinhas na criação.",
+                "• `models.ForeignKey(Topic, on_delete=models.CASCADE)`: liga cada anotação a um tópico. "
+                "`CASCADE` apaga as anotações junto com o tópico.",
+                "O método `__str__` diz como o objeto aparece em listas e no admin. A `class Meta` guarda detalhes extras, "
+                "como o plural certo (`entries`).",
+                "No PC, depois de criar ou mudar um model, você roda `python manage.py makemigrations` e "
+                "`python manage.py migrate` para atualizar o banco. E `admin.site.register(Topic)` mostra o model "
+                "no painel de administração.",
+            ],
+            "exemplo": _MODELS_18 + _c('''
+
+
+xadrez = Topic.objects.create(text="Xadrez")
+Entry.objects.create(topic=xadrez, text="A abertura é a primeira fase da partida.")
+Entry.objects.create(topic=xadrez, text="Na abertura, tente controlar o centro do tabuleiro com peões e cavalos.")
+
+print(Topic.objects.all())
+for entry in xadrez.entry_set.all():
+    print("-", entry)
+print("Criado em:", xadrez.date_added)
+'''),
+        },
+        {
+            "titulo": "Explorando no shell",
+            "texto": [
+                "`python manage.py shell` abre um terminal Python com o seu projeto carregado. É ótimo para testar "
+                "consultas antes de usá-las nas páginas.",
+                "Todo model ganha um **gerenciador** `objects`:",
+                "• `Topic.objects.all()`: todos os tópicos (um **QuerySet**, parecido com uma lista);",
+                "• `Topic.objects.get(id=1)`: um objeto só (dá erro se não existir);",
+                "• `.filter(text='Xadrez')`, `.order_by('date_added')` (ou `'-date_added'`, do mais novo para o mais antigo), `.count()`.",
+                "Com a ForeignKey, cada tópico ganha `topic.entry_set`: o nome do model em minúsculas + `_set`. "
+                "Ele dá acesso às anotações daquele tópico.",
+            ],
+            "exemplo": _MODELS_18 + _c('''
+
+
+for nome in ["Xadrez", "Escalada", "Violão"]:
+    Topic.objects.create(text=nome)
+
+escalada = Topic.objects.get(text="Escalada")
+escalada.entry_set.create(text="Sempre confira o nó antes de subir.")
+escalada.entry_set.create(text="Aqueça os dedos com vias fáceis.")
+
+print("Todos:", Topic.objects.all())
+print("Primeiro:", Topic.objects.get(id=1))
+print("Do mais novo ao mais antigo:", Topic.objects.order_by("-date_added"))
+print(f"{escalada} tem {escalada.entry_set.count()} anotações")
+print("Com 'a' no nome:", Topic.objects.filter(text__icontains="a"))
+'''),
+        },
+        {
+            "titulo": "URLs, views e templates",
+            "texto": [
+                "Uma página do Django tem três partes:",
+                "• **URL**: `path('topics/', topics, name='topics')` liga um endereço a uma view. O `name` permite "
+                "achar a URL pelo nome em vez de escrever o endereço.",
+                "• **View**: uma função que recebe o `request` e devolve a página: `return render(request, 'learning_logs/topics.html', context)`.",
+                "• **Template**: o HTML com marcações do Django. `{{ topic }}` mostra um valor; "
+                "`{% for topic in topics %}...{% empty %}...{% endfor %}` repete um trecho.",
+                "Com `app_name = 'learning_logs'`, as URLs ganham um sobrenome: `{% url 'learning_logs:topics' %}` vira `/topics/`.",
+                "O `context` é um dicionário com os dados que o template pode usar.",
+            ],
+            "exemplo": _MODELS_18 + _c('''
+
+
+from django.shortcuts import render
+from django.urls import path
+from django.test import Client
+
+
+def topics(request):
+    topics = Topic.objects.order_by("date_added")
+    context = {"topics": topics}
+    return render(request, "learning_logs/topics.html", context)
+
+
+app_name = "learning_logs"
+urlpatterns = [
+    path("topics/", topics, name="topics"),
+]
+
+TEMPLATES = {
+    "learning_logs/topics.html": """<h1>Topics</h1>
+<ul>
+  {% for topic in topics %}
+    <li>{{ topic }}</li>
+  {% empty %}
+    <li>No topics have been added yet.</li>
+  {% endfor %}
+</ul>
+<a href="{% url 'learning_logs:topics' %}">Recarregar</a>""",
+}
+
+navegador = Client()
+print(navegador.get("/topics/").content)
+
+Topic.objects.create(text="Xadrez")
+Topic.objects.create(text="Escalada")
+print(navegador.get("/topics/").content)
+'''),
+        },
+        {
+            "titulo": "Herança de templates e páginas de detalhe",
+            "texto": [
+                "Todas as páginas do site repetem o topo com os links. Em vez de copiar, crie um `base.html` com "
+                "`{% block content %}{% endblock content %}` e, nas outras páginas, comece com "
+                "`{% extends 'learning_logs/base.html' %}` e preencha só o bloco.",
+                "## Uma página para cada tópico",
+                "`path('topics/<int:topic_id>/', topic, name='topic')` captura o número da URL e entrega para a view "
+                "como `topic_id`. Para gerar o link: `{% url 'learning_logs:topic' topic.id %}`.",
+                "Na view, `topic.entry_set.order_by('-date_added')` mostra as anotações mais novas primeiro.",
+                "Filtros mudam como um valor aparece: `{{ entry.date_added|date:'d/m/Y H:i' }}` formata a data e "
+                "`{{ entry.text|linebreaks }}` transforma quebras de linha em parágrafos.",
+            ],
+            "exemplo": _MODELS_18 + _c('''
+
+
+from django.shortcuts import render
+from django.urls import path
+from django.test import Client
+
+
+def topic(request, topic_id):
+    topic = Topic.objects.get(id=topic_id)
+    entries = topic.entry_set.order_by("-date_added")
+    return render(request, "learning_logs/topic.html", {"topic": topic, "entries": entries})
+
+
+app_name = "learning_logs"
+urlpatterns = [
+    path("topics/<int:topic_id>/", topic, name="topic"),
+]
+
+TEMPLATES = {
+    "learning_logs/base.html": """<p><a href="{% url 'learning_logs:topic' 1 %}">Learning Log</a></p>
+{% block content %}{% endblock content %}""",
+    "learning_logs/topic.html": """{% extends "learning_logs/base.html" %}
+{% block content %}
+<h2>{{ topic }}</h2>
+{% for entry in entries %}
+  <p><b>{{ entry.date_added|date:'d/m/Y H:i' }}</b></p>
+  {{ entry.text|linebreaks }}
+{% endfor %}
+{% endblock content %}""",
+}
+
+xadrez = Topic.objects.create(text="Xadrez")
+xadrez.entry_set.create(text="Primeira anotação.")
+xadrez.entry_set.create(text="Segunda anotação,\\nem duas linhas.")
+print(Client().get("/topics/1/").content)
+'''),
+        },
+    ],
+    "quiz": [
+        {"pergunta": "Num projeto Django, o que um model define?",
+         "opcoes": ["A cor das páginas", "Como um tipo de dado é guardado no banco", "Qual URL abre cada página", "O servidor de e-mail"],
+         "correta": 1, "explicacao": "Cada model vira uma tabela, e cada atributo vira uma coluna."},
+        {"pergunta": "Qual campo é próprio para um texto longo, sem limite de tamanho?",
+         "opcoes": ["CharField", "TextField", "IntegerField", "DateTimeField"], "correta": 1,
+         "explicacao": "CharField exige max_length; TextField é para textos longos."},
+        {"pergunta": "O que `on_delete=models.CASCADE` faz numa ForeignKey?",
+         "opcoes": ["Impede apagar o tópico", "Apaga as anotações junto quando o tópico é apagado",
+                    "Copia as anotações", "Ordena as anotações"], "correta": 1,
+         "explicacao": "Em cascata: apagar o tópico apaga tudo o que depende dele."},
+        {"pergunta": "Com `class Entry(models.Model)` ligada a Topic por ForeignKey, como acessar as anotações de um tópico?",
+         "opcoes": ["topic.entries", "topic.entry_set.all()", "Entry.topic(topic)", "topic.get_entries()"], "correta": 1,
+         "explicacao": "O Django cria o acesso reverso com o nome do model em minúsculas + _set."},
+        {"pergunta": "O que `Topic.objects.order_by('-date_added')` devolve?",
+         "opcoes": ["Os tópicos do mais antigo ao mais novo", "Os tópicos do mais novo ao mais antigo",
+                    "Só o último tópico", "Um erro, por causa do sinal de menos"], "correta": 1,
+         "explicacao": "O sinal de menos inverte a ordem."},
+        {"pergunta": "Em `path('topics/<int:topic_id>/', topic, name='topic')`, o que acontece com o número da URL?",
+         "opcoes": ["É ignorado", "Vira o argumento topic_id da view, já como inteiro", "Vira o nome do template", "Vai para o context"],
+         "correta": 1, "explicacao": "O conversor int captura o número e entrega para a view."},
+        {"pergunta": "Para que serve `{% extends 'learning_logs/base.html' %}`?",
+         "opcoes": ["Importar um model", "Usar o base.html como molde e preencher só os blocos", "Criar uma URL", "Salvar o template"],
+         "correta": 1, "explicacao": "A herança de templates evita repetir o mesmo HTML em todas as páginas."},
+    ],
+    "desafios": [
+        {
+            "titulo": "O primeiro model",
+            "enunciado": "Crie o model `Topic` com:\n"
+                         "• text: CharField com max_length=200\n"
+                         "• date_added: DateTimeField com auto_now_add=True\n"
+                         "• __str__ devolvendo o text",
+            "inicial": "from django.db import models\n\n\nclass Topic(models.Model):\n    pass\n",
+            "dica": "text = models.CharField(max_length=200) e date_added = models.DateTimeField(auto_now_add=True).",
+            "solucao": _c('''
+from django.db import models
+
+
+class Topic(models.Model):
+    """Um assunto sobre o qual o usuário está aprendendo."""
+    text = models.CharField(max_length=200)
+    date_added = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.text
+'''),
+            "casos": [caso([classe("Topic"),
+                            regra(lambda o, n, c: _teste_model_topic(n),
+                                  "Teste: text precisa ser CharField(max_length=200), date_added um DateTimeField com "
+                                  "auto_now_add=True, e str(Topic.objects.create(text='Xadrez')) deveria dar 'Xadrez'.")])],
+        },
+        {
+            "titulo": "Anotações ligadas",
+            "enunciado": "O Topic já está pronto. Crie o model `Entry`:\n"
+                         "• topic: ForeignKey para Topic com on_delete=models.CASCADE\n"
+                         "• text: TextField\n"
+                         "• date_added: DateTimeField(auto_now_add=True)\n"
+                         "• class Meta com verbose_name_plural = 'entries'\n"
+                         "• __str__: o texto inteiro se tiver até 50 caracteres; senão, os 50 primeiros + '...'",
+            "inicial": _c('''
+from django.db import models
+
+
+class Topic(models.Model):
+    text = models.CharField(max_length=200)
+    date_added = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.text
+
+
+class Entry(models.Model):
+    pass
+''') + "\n",
+            "dica": "No __str__: if len(self.text) <= 50: return self.text, senão return f\"{self.text[:50]}...\".",
+            "solucao": _c('''
+from django.db import models
+
+
+class Topic(models.Model):
+    text = models.CharField(max_length=200)
+    date_added = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.text
+
+
+class Entry(models.Model):
+    topic = models.ForeignKey(Topic, on_delete=models.CASCADE)
+    text = models.TextField()
+    date_added = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name_plural = "entries"
+
+    def __str__(self):
+        if len(self.text) <= 50:
+            return self.text
+        return f"{self.text[:50]}..."
+'''),
+            "casos": [caso([classe("Entry"),
+                            regra(lambda o, n, c: _teste_model_entry(n),
+                                  "Teste: Entry precisa da ForeignKey para Topic (CASCADE), do TextField e do plural "
+                                  "'entries'; uma anotação curta aparece inteira, uma com 60 letras aparece com 50 + '...'; "
+                                  "e apagar o tópico apaga as anotações.")])],
+        },
+        {
+            "titulo": "Brincando no shell",
+            "enunciado": "Com os models prontos, crie pelo código:\n"
+                         "• o tópico 'Xadrez', com 2 anotações (textos à sua escolha)\n"
+                         "• o tópico 'Escalada', com 1 anotação\n\n"
+                         "Depois, percorra Topic.objects.order_by('date_added') e mostre, para cada tópico:\n"
+                         "Xadrez: 2 anotações\nEscalada: 1 anotações",
+            "inicial": _MODELS_18 + "\n\n# Seu código aqui\n",
+            "dica": "xadrez = Topic.objects.create(text='Xadrez'); xadrez.entry_set.create(text='...'). "
+                    "Para contar: topic.entry_set.count().",
+            "solucao": _MODELS_18 + _c('''
+
+
+xadrez = Topic.objects.create(text="Xadrez")
+xadrez.entry_set.create(text="A abertura é a primeira fase.")
+xadrez.entry_set.create(text="O roque protege o rei.")
+escalada = Topic.objects.create(text="Escalada")
+escalada.entry_set.create(text="Confira o nó duas vezes.")
+
+for topic in Topic.objects.order_by("date_added"):
+    print(f"{topic}: {topic.entry_set.count()} anotações")
+'''),
+            "casos": [caso([saida("Xadrez: 2 anotações\nEscalada: 1 anotações"),
+                            regra(lambda o, n, c: n["Entry"].objects.count() == 3 and n["Topic"].objects.count() == 2,
+                                  "O banco deveria terminar com 2 tópicos e 3 anotações."),
+                            tem("entry_set", "Use topic.entry_set para chegar às anotações de cada tópico.")])],
+        },
+        {
+            "titulo": "Página inicial",
+            "enunciado": "Crie a página inicial do Learning Log:\n"
+                         "• a view `index`, que usa render com o template 'learning_logs/index.html'\n"
+                         "• app_name = 'learning_logs' e urlpatterns com path('', index, name='index')\n"
+                         "• no dicionário TEMPLATES, o template 'learning_logs/index.html' com <h1>Learning Log</h1> e um parágrafo explicando o site",
+            "inicial": _c('''
+from django.shortcuts import render
+from django.urls import path
+from django.test import Client
+
+
+# Escreva a view, as URLs e o dicionário TEMPLATES
+
+
+print(Client().get("/").content)
+''') + "\n",
+            "dica": "def index(request): return render(request, 'learning_logs/index.html'). "
+                    "TEMPLATES = {'learning_logs/index.html': '<h1>Learning Log</h1><p>...</p>'}.",
+            "solucao": _c('''
+from django.shortcuts import render
+from django.urls import path
+from django.test import Client
+
+
+def index(request):
+    """A página inicial do Learning Log."""
+    return render(request, "learning_logs/index.html")
+
+
+app_name = "learning_logs"
+urlpatterns = [
+    path("", index, name="index"),
+]
+
+TEMPLATES = {
+    "learning_logs/index.html": """<h1>Learning Log</h1>
+<p>Learning Log helps you keep track of your learning, for any topic you're interested in.</p>""",
+}
+
+print(Client().get("/").content)
+'''),
+            "casos": [caso([funcao("index"),
+                            regra(lambda o, n, c: _teste_index(n),
+                                  "Teste: Client().get('/') deveria dar status 200, usar o template "
+                                  "'learning_logs/index.html' e mostrar <h1>Learning Log</h1>.")])],
+        },
+        {
+            "titulo": "Lista de tópicos",
+            "enunciado": "O model Topic já está pronto. Crie:\n"
+                         "• a view `topics`, que manda todos os tópicos (ordenados por date_added) para o template "
+                         "'learning_logs/topics.html', na variável topics\n"
+                         "• a URL 'topics/' com name='topics' (app_name = 'learning_logs')\n"
+                         "• o template, com um <li>{{ topic }}</li> para cada tópico e, se não houver nenhum, "
+                         "<li>Nenhum tópico ainda.</li> (use {% empty %})",
+            "inicial": _c('''
+from django.db import models
+from django.shortcuts import render
+from django.urls import path
+
+
+class Topic(models.Model):
+    text = models.CharField(max_length=200)
+    date_added = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.text
+
+
+# Escreva a view, as URLs e o TEMPLATES
+''') + "\n",
+            "dica": "No template: <ul>{% for topic in topics %}<li>{{ topic }}</li>{% empty %}<li>Nenhum tópico ainda.</li>{% endfor %}</ul>",
+            "solucao": _c('''
+from django.db import models
+from django.shortcuts import render
+from django.urls import path
+
+
+class Topic(models.Model):
+    text = models.CharField(max_length=200)
+    date_added = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.text
+
+
+def topics(request):
+    topics = Topic.objects.order_by("date_added")
+    return render(request, "learning_logs/topics.html", {"topics": topics})
+
+
+app_name = "learning_logs"
+urlpatterns = [
+    path("topics/", topics, name="topics"),
+]
+
+TEMPLATES = {
+    "learning_logs/topics.html": """<h1>Topics</h1>
+<ul>
+  {% for topic in topics %}
+    <li>{{ topic }}</li>
+  {% empty %}
+    <li>Nenhum tópico ainda.</li>
+  {% endfor %}
+</ul>""",
+}
+'''),
+            "casos": [caso([funcao("topics"),
+                            regra(lambda o, n, c: _teste_lista_topicos(n),
+                                  "Teste: sem tópicos, /topics/ deveria mostrar 'Nenhum tópico ainda.'; depois de criar "
+                                  "'Xadrez' e 'Escalada', deveria mostrar <li>Xadrez</li> e <li>Escalada</li>, nessa ordem.")])],
+        },
+        {
+            "titulo": "Caça-bugs: o link sem destino",
+            "enunciado": "A lista de tópicos deveria ter um link para cada tópico, mas a página dá NoReverseMatch. "
+                         "Conserte o template para o programa mostrar 200 e o link /topics/1/.",
+            "inicial": _MODELS_18 + _c('''
+
+
+from django.shortcuts import render
+from django.urls import path
+from django.test import Client
+
+
+def topics(request):
+    return render(request, "learning_logs/topics.html", {"topics": Topic.objects.all()})
+
+
+def topic(request, topic_id):
+    return render(request, "learning_logs/topic.html", {"topic": Topic.objects.get(id=topic_id)})
+
+
+app_name = "learning_logs"
+urlpatterns = [
+    path("topics/", topics, name="topics"),
+    path("topics/<int:topic_id>/", topic, name="topic"),
+]
+
+TEMPLATES = {
+    "learning_logs/topics.html": """<ul>{% for topic in topics %}
+<li><a href="{% url 'learning_logs:topic' %}">{{ topic }}</a></li>
+{% endfor %}</ul>""",
+    "learning_logs/topic.html": "<h1>{{ topic }}</h1>",
+}
+
+Topic.objects.create(text="Xadrez")
+resposta = Client().get("/topics/")
+print(resposta.status_code)
+''') + "\n",
+            "dica": "A URL 'topic' precisa saber QUAL tópico: passe o id depois do nome, dentro do {% url %}.",
+            "solucao": _MODELS_18 + _c('''
+
+
+from django.shortcuts import render
+from django.urls import path
+from django.test import Client
+
+
+def topics(request):
+    return render(request, "learning_logs/topics.html", {"topics": Topic.objects.all()})
+
+
+def topic(request, topic_id):
+    return render(request, "learning_logs/topic.html", {"topic": Topic.objects.get(id=topic_id)})
+
+
+app_name = "learning_logs"
+urlpatterns = [
+    path("topics/", topics, name="topics"),
+    path("topics/<int:topic_id>/", topic, name="topic"),
+]
+
+TEMPLATES = {
+    "learning_logs/topics.html": """<ul>{% for topic in topics %}
+<li><a href="{% url 'learning_logs:topic' topic.id %}">{{ topic }}</a></li>
+{% endfor %}</ul>""",
+    "learning_logs/topic.html": "<h1>{{ topic }}</h1>",
+}
+
+Topic.objects.create(text="Xadrez")
+resposta = Client().get("/topics/")
+print(resposta.status_code)
+'''),
+            "casos": [caso([saida("200"),
+                            regra(lambda o, n, c: 'href="/topics/1/"' in _cliente(n).get("/topics/").content,
+                                  "A lista deveria ter o link href=\"/topics/1/\" para o tópico Xadrez.")])],
+        },
+    ],
+    "chefe": {
+        "titulo": "O Diário de Bordo",
+        "enunciado": "Os models já estão prontos. Monte as duas páginas principais do Learning Log:\n\n"
+                     "1. Template 'learning_logs/base.html' com um link para a lista de tópicos ({% url 'learning_logs:topics' %}) "
+                     "e um {% block content %}.\n"
+                     "2. Página /topics/ (view topics, name='topics'): estende o base e mostra cada tópico como link para a "
+                     "página dele.\n"
+                     "3. Página /topics/<id>/ (view topic, name='topic'): estende o base e mostra o nome do tópico e as "
+                     "anotações da mais nova para a mais antiga, cada uma com a data no formato 'd/m/Y H:i'.\n\n"
+                     "Use app_name = 'learning_logs'. O Verificar cria tópicos e anotações e abre as páginas.",
+        "inicial": _MODELS_18 + _c('''
+
+
+from django.shortcuts import render
+from django.urls import path
+
+# Escreva as views, as URLs e o dicionário TEMPLATES
+''') + "\n",
+        "dica": "Na view topic: topic = Topic.objects.get(id=topic_id) e entries = topic.entry_set.order_by('-date_added'). "
+                "No template: {{ entry.date_added|date:'d/m/Y H:i' }}.",
+        "solucao": _MODELS_18 + _c('''
+
+
+from django.shortcuts import render
+from django.urls import path
+
+
+def topics(request):
+    topics = Topic.objects.order_by("date_added")
+    return render(request, "learning_logs/topics.html", {"topics": topics})
+
+
+def topic(request, topic_id):
+    topic = Topic.objects.get(id=topic_id)
+    entries = topic.entry_set.order_by("-date_added")
+    return render(request, "learning_logs/topic.html", {"topic": topic, "entries": entries})
+
+
+app_name = "learning_logs"
+urlpatterns = [
+    path("topics/", topics, name="topics"),
+    path("topics/<int:topic_id>/", topic, name="topic"),
+]
+
+TEMPLATES = {
+    "learning_logs/base.html": """<p><a href="{% url 'learning_logs:topics' %}">Topics</a></p>
+{% block content %}{% endblock content %}""",
+    "learning_logs/topics.html": """{% extends "learning_logs/base.html" %}
+{% block content %}
+<ul>
+  {% for topic in topics %}
+    <li><a href="{% url 'learning_logs:topic' topic.id %}">{{ topic }}</a></li>
+  {% empty %}
+    <li>No topics have been added yet.</li>
+  {% endfor %}
+</ul>
+{% endblock content %}""",
+    "learning_logs/topic.html": """{% extends "learning_logs/base.html" %}
+{% block content %}
+<h2>{{ topic }}</h2>
+<ul>
+  {% for entry in entries %}
+    <li>
+      <p>{{ entry.date_added|date:'d/m/Y H:i' }}</p>
+      <p>{{ entry.text|linebreaks }}</p>
+    </li>
+  {% empty %}
+    <li>There are no entries for this topic yet.</li>
+  {% endfor %}
+</ul>
+{% endblock content %}""",
+}
+'''),
+        "casos": [caso([funcao("topics"), funcao("topic"),
+                        regra(lambda o, n, c: _teste_diario(n),
+                              "Teste: com os tópicos Xadrez e Escalada, /topics/ precisa ter os links /topics/1/ e "
+                              "/topics/2/ e o link do base para /topics/; /topics/1/ precisa mostrar 'Xadrez', só as "
+                              "anotações dele, da mais nova para a mais antiga, com a data no formato d/m/Y (ex.: 02/03/2026).")])],
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# CAPÍTULO 19: Contas de usuário
+# ---------------------------------------------------------------------------
+
+_FORMS_19 = '''from django import forms
+
+
+class TopicForm(forms.ModelForm):
+    class Meta:
+        model = Topic
+        fields = ["text"]
+        labels = {"text": ""}
+
+
+class EntryForm(forms.ModelForm):
+    class Meta:
+        model = Entry
+        fields = ["text"]
+        labels = {"text": ""}
+        widgets = {"text": forms.Textarea(attrs={"cols": 80})}
+'''
+
+CAP19 = {
+    "num": 19,
+    "titulo": "Web: Contas de Usuário",
+    "subtitulo": "Formulários, edição, login, cadastro e dados de cada um",
+    "licoes": [
+        {
+            "titulo": "Formulários com ModelForm",
+            "texto": [
+                "Para o usuário adicionar tópicos pelo site, precisamos de um **formulário**. O `ModelForm` monta um "
+                "formulário a partir de um model: na `class Meta`, diga o `model` e os `fields`.",
+                "A view de um formulário tem duas situações:",
+                "• **GET** (abrir a página): cria um formulário vazio, `form = TopicForm()`.",
+                "• **POST** (enviar): preenche com os dados, `form = TopicForm(data=request.POST)`. "
+                "Se `form.is_valid()`, chama `form.save()` e redireciona com `redirect('learning_logs:topics')`.",
+                "No template, o formulário usa `method=\"post\"`, a proteção `{% csrf_token %}` e `{{ form.as_div }}` "
+                "para desenhar os campos.",
+                "Com o Client, `navegador.post('/new_topic/', {'text': 'Xadrez'})` envia o formulário.",
+            ],
+            "exemplo": _MODELS_18 + _c('''
+
+
+from django import forms
+from django.shortcuts import render, redirect
+from django.urls import path
+from django.test import Client
+
+
+class TopicForm(forms.ModelForm):
+    class Meta:
+        model = Topic
+        fields = ["text"]
+        labels = {"text": ""}
+
+
+def topics(request):
+    return render(request, "learning_logs/topics.html", {"topics": Topic.objects.all()})
+
+
+def new_topic(request):
+    if request.method != "POST":
+        form = TopicForm()
+    else:
+        form = TopicForm(data=request.POST)
+        if form.is_valid():
+            form.save()
+            return redirect("learning_logs:topics")
+    return render(request, "learning_logs/new_topic.html", {"form": form})
+
+
+app_name = "learning_logs"
+urlpatterns = [
+    path("topics/", topics, name="topics"),
+    path("new_topic/", new_topic, name="new_topic"),
+]
+
+TEMPLATES = {
+    "learning_logs/topics.html": "{% for t in topics %}<li>{{ t }}</li>{% endfor %}",
+    "learning_logs/new_topic.html": """<form action="{% url 'learning_logs:new_topic' %}" method="post">
+  {% csrf_token %}
+  {{ form.as_div }}
+  <button name="submit">Add topic</button>
+</form>""",
+}
+
+navegador = Client()
+print(navegador.get("/new_topic/").content)
+resposta = navegador.post("/new_topic/", {"text": "Xadrez"})
+print("\\nDepois de enviar:", resposta.status_code, "->", resposta.url)
+print("Tópicos:", Topic.objects.all())
+print("Vazio é válido?", TopicForm(data={"text": ""}).is_valid())
+'''),
+        },
+        {
+            "titulo": "Novas anotações e edição",
+            "texto": [
+                "A anotação pertence a um tópico, mas o formulário só pede o texto. A saída é salvar em duas etapas: "
+                "`new_entry = form.save(commit=False)` cria o objeto **sem** gravar; depois `new_entry.topic = topic` "
+                "e `new_entry.save()`.",
+                "Para **editar**, passe o objeto que já existe: `EntryForm(instance=entry)` mostra o texto atual, e "
+                "`EntryForm(instance=entry, data=request.POST)` atualiza em vez de criar outro.",
+                "`widgets = {'text': forms.Textarea(attrs={'cols': 80})}` deixa a caixa de texto mais larga.",
+                "Para redirecionar a uma URL com argumento: `redirect('learning_logs:topic', topic_id=topic.id)`.",
+            ],
+            "exemplo": _MODELS_18 + "\n\n" + _FORMS_19 + _c('''
+
+
+from django.shortcuts import render, redirect
+from django.urls import path
+from django.test import Client
+
+
+def edit_entry(request, entry_id):
+    entry = Entry.objects.get(id=entry_id)
+    topic = entry.topic
+    if request.method != "POST":
+        form = EntryForm(instance=entry)
+    else:
+        form = EntryForm(instance=entry, data=request.POST)
+        if form.is_valid():
+            form.save()
+            return redirect("learning_logs:topic", topic_id=topic.id)
+    return render(request, "learning_logs/edit_entry.html", {"entry": entry, "topic": topic, "form": form})
+
+
+def topic(request, topic_id):
+    return render(request, "learning_logs/topic.html", {"topic": Topic.objects.get(id=topic_id)})
+
+
+app_name = "learning_logs"
+urlpatterns = [
+    path("topics/<int:topic_id>/", topic, name="topic"),
+    path("edit_entry/<int:entry_id>/", edit_entry, name="edit_entry"),
+]
+
+TEMPLATES = {
+    "learning_logs/topic.html": "<h1>{{ topic }}</h1>",
+    "learning_logs/edit_entry.html": """<p>{{ topic }}</p>
+<form method="post">{% csrf_token %}{{ form.as_div }}<button>Save changes</button></form>""",
+}
+
+xadrez = Topic.objects.create(text="Xadrez")
+entry = Entry.objects.create(topic=xadrez, text="O cavalo anda em L.")
+
+navegador = Client()
+print(navegador.get(f"/edit_entry/{entry.id}/").content)
+r = navegador.post(f"/edit_entry/{entry.id}/", {"text": "O cavalo anda em L e pode pular peças."})
+print("\\nRedirecionou para:", r.url)
+print("Texto agora:", Entry.objects.get(id=entry.id).text)
+print("Anotações no banco:", Entry.objects.count())
+'''),
+        },
+        {
+            "titulo": "Login, logout e cadastro",
+            "texto": [
+                "O livro cria um segundo app, `users`. O Django já traz as páginas de login e logout prontas: basta "
+                "`path('', include('django.contrib.auth.urls'))`, e você só escreve o template `registration/login.html`.",
+                "Nas configurações, `LOGIN_REDIRECT_URL` e `LOGOUT_REDIRECT_URL` dizem para onde ir depois de entrar e sair. "
+                "O logout é um formulário com `method=\"post\"`.",
+                "Para o **cadastro**, use o `UserCreationForm` pronto. Se for válido: `new_user = form.save()`, depois "
+                "`login(request, new_user)` para já entrar, e redirecione.",
+                "## Juntando dois apps num arquivo",
+                "No projeto real, cada app tem seu `urls.py`. Aqui juntamos assim: "
+                "`path('users/', include((users_urls, 'users')))`. Isso dá às URLs os nomes `users:login`, `users:register` etc.",
+                "No template, `{% if user.is_authenticated %}` mostra coisas diferentes para quem entrou e para quem não entrou.",
+            ],
+            "exemplo": _c('''
+from django.contrib.auth import login
+from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.models import User
+from django.shortcuts import render, redirect
+from django.urls import path, include
+from django.test import Client
+
+
+def index(request):
+    return render(request, "learning_logs/index.html")
+
+
+def register(request):
+    if request.method != "POST":
+        form = UserCreationForm()
+    else:
+        form = UserCreationForm(data=request.POST)
+        if form.is_valid():
+            new_user = form.save()
+            login(request, new_user)
+            return redirect("learning_logs:index")
+    return render(request, "registration/register.html", {"form": form})
+
+
+ll_urls = [path("", index, name="index")]
+users_urls = [
+    path("", include("django.contrib.auth.urls")),
+    path("register/", register, name="register"),
+]
+urlpatterns = [
+    path("", include((ll_urls, "learning_logs"))),
+    path("users/", include((users_urls, "users"))),
+]
+LOGIN_REDIRECT_URL = "learning_logs:index"
+
+TEMPLATES = {
+    "learning_logs/index.html": """{% if user.is_authenticated %}Hello, {{ user.username }}.
+{% else %}<a href="{% url 'users:register' %}">Register</a> - <a href="{% url 'users:login' %}">Log in</a>{% endif %}""",
+    "registration/register.html": """<form method="post">{% csrf_token %}{{ form.as_div }}<button>Register</button></form>""",
+    "registration/login.html": """<form method="post">{% csrf_token %}{{ form.as_div }}<button>Log in</button></form>""",
+}
+
+navegador = Client()
+print(navegador.get("/").content)
+erro = navegador.post("/users/register/", {"username": "ana", "password1": "abc", "password2": "xyz"})
+print("\\nSenhas diferentes -> fica na página:", erro.status_code)
+ok = navegador.post("/users/register/", {"username": "ana", "password1": "senha-forte-1", "password2": "senha-forte-1"})
+print("Cadastro certo -> vai para:", ok.url)
+print(navegador.get("/").content)
+print("Usuários:", User.objects.all())
+'''),
+        },
+        {
+            "titulo": "Cada um com seus dados",
+            "texto": [
+                "Hoje, qualquer pessoa vê os tópicos de todo mundo. Vamos proteger:",
+                "• `@login_required` antes da view: quem não entrou é mandado para a página de login. "
+                "Defina `LOGIN_URL = 'users:login'`.",
+                "• No model Topic, `owner = models.ForeignKey(User, on_delete=models.CASCADE)` liga cada tópico a um dono.",
+                "• Na lista, `Topic.objects.filter(owner=request.user)` mostra só os tópicos de quem está logado.",
+                "• Na página de um tópico, `if topic.owner != request.user: raise Http404` impede espiar pela URL.",
+                "• Ao criar: `new_topic = form.save(commit=False)`, `new_topic.owner = request.user` e `new_topic.save()`.",
+                "Com o Client, `navegador.force_login(usuario)` entra direto como aquela pessoa (só para testes).",
+            ],
+            "exemplo": _MODELS_19 + _c('''
+
+
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import User
+from django.http import Http404
+from django.shortcuts import render
+from django.urls import path, include
+from django.test import Client
+
+
+@login_required
+def topics(request):
+    topics = Topic.objects.filter(owner=request.user).order_by("date_added")
+    return render(request, "learning_logs/topics.html", {"topics": topics})
+
+
+@login_required
+def topic(request, topic_id):
+    topic = Topic.objects.get(id=topic_id)
+    if topic.owner != request.user:
+        raise Http404
+    return render(request, "learning_logs/topic.html", {"topic": topic})
+
+
+ll_urls = [
+    path("topics/", topics, name="topics"),
+    path("topics/<int:topic_id>/", topic, name="topic"),
+]
+urlpatterns = [
+    path("", include((ll_urls, "learning_logs"))),
+    path("users/", include(([path("", include("django.contrib.auth.urls"))], "users"))),
+]
+LOGIN_URL = "users:login"
+
+TEMPLATES = {
+    "learning_logs/topics.html": "{% for t in topics %}<li>{{ t }}</li>{% endfor %}",
+    "learning_logs/topic.html": "<h1>{{ topic }}</h1>",
+}
+
+ana = User.objects.create_user("ana", password="senha-da-ana")
+bia = User.objects.create_user("bia", password="senha-da-bia")
+Topic.objects.create(text="Xadrez da Ana", owner=ana)
+Topic.objects.create(text="Violão da Bia", owner=bia)
+
+anonimo = Client()
+r = anonimo.get("/topics/")
+print("Sem login:", r.status_code, "->", r.url)
+
+navegador = Client()
+navegador.force_login(bia)
+print("Bia vê:", navegador.get("/topics/").content)
+print("Bia tenta o tópico da Ana:", navegador.get("/topics/1/").status_code)
+'''),
+        },
+    ],
+    "quiz": [
+        {"pergunta": "O que a `class Meta` de um ModelForm precisa ter?",
+         "opcoes": ["Só o nome do template", "O model e os fields que aparecem no formulário", "A URL do formulário", "O método POST"],
+         "correta": 1, "explicacao": "model diz de onde vêm os campos; fields diz quais aparecem."},
+        {"pergunta": "Quando o navegador ENVIA um formulário, qual é o request.method?",
+         "opcoes": ["GET", "POST", "SEND", "PUT"], "correta": 1,
+         "explicacao": "GET busca a página; POST envia dados para o servidor."},
+        {"pergunta": "Para que serve `form.save(commit=False)`?",
+         "opcoes": ["Apagar o formulário", "Criar o objeto sem gravar, para completar campos antes",
+                    "Validar o formulário", "Salvar duas vezes"], "correta": 1,
+         "explicacao": "Assim dá para preencher topic ou owner antes do save() de verdade."},
+        {"pergunta": "Como editar uma anotação que já existe com o EntryForm?",
+         "opcoes": ["EntryForm(entry)", "EntryForm(instance=entry, data=request.POST)", "EntryForm.edit(entry)", "Entry.objects.edit()"],
+         "correta": 1, "explicacao": "Com instance, o save() atualiza o objeto em vez de criar outro."},
+        {"pergunta": "O que `@login_required` faz com quem não entrou na conta?",
+         "opcoes": ["Mostra a página mesmo assim", "Redireciona para a página de login", "Apaga a conta", "Dá erro 500"],
+         "correta": 1, "explicacao": "O endereço de login vem de LOGIN_URL."},
+        {"pergunta": "Qual consulta mostra só os tópicos de quem está logado?",
+         "opcoes": ["Topic.objects.all()", "Topic.objects.filter(owner=request.user)",
+                    "Topic.objects.get(user)", "request.user.topics"], "correta": 1,
+         "explicacao": "filter(owner=...) limita aos tópicos daquele dono."},
+        {"pergunta": "Por que conferir `topic.owner != request.user` na página de um tópico?",
+         "opcoes": ["Para deixar a página mais rápida", "Para ninguém ver o tópico de outra pessoa digitando a URL",
+                    "Para criar o tópico", "Não precisa, o filter já basta"], "correta": 1,
+         "explicacao": "O filter protege a lista; a página de detalhe precisa da sua própria checagem."},
+    ],
+    "desafios": [
+        {
+            "titulo": "Formulário de tópico",
+            "enunciado": "Os models estão prontos. Crie o `TopicForm`, um ModelForm do model Topic com o campo 'text' e "
+                         "sem rótulo (labels = {'text': ''}).",
+            "inicial": _MODELS_18 + "\n\nfrom django import forms\n\n# Crie o TopicForm\n",
+            "dica": "class TopicForm(forms.ModelForm): e dentro dela class Meta: model = Topic, fields = ['text'], labels = {'text': ''}.",
+            "solucao": _MODELS_18 + _c('''
+
+
+from django import forms
+
+
+class TopicForm(forms.ModelForm):
+    class Meta:
+        model = Topic
+        fields = ["text"]
+        labels = {"text": ""}
+'''),
+            "casos": [caso([classe("TopicForm"),
+                            regra(lambda o, n, c: _teste_topicform(n),
+                                  "Teste: TopicForm.Meta precisa de model = Topic, fields = ['text'] e labels = {'text': ''}; "
+                                  "TopicForm(data={'text': 'Xadrez'}) é válido e salva; com texto vazio, não é válido.")])],
+        },
+        {
+            "titulo": "Novo tópico",
+            "enunciado": "Crie a view `new_topic` e a URL 'new_topic/' (name='new_topic'):\n"
+                         "• GET: mostra o formulário vazio no template 'learning_logs/new_topic.html'\n"
+                         "• POST válido: salva e redireciona para 'learning_logs:topics'\n"
+                         "• POST inválido: mostra o formulário de novo, com o erro\n"
+                         "O template precisa ter {% csrf_token %} e {{ form.as_div }}.",
+            "inicial": _MODELS_18 + _c('''
+
+
+from django import forms
+from django.shortcuts import render, redirect
+from django.urls import path
+
+
+class TopicForm(forms.ModelForm):
+    class Meta:
+        model = Topic
+        fields = ["text"]
+        labels = {"text": ""}
+
+
+def topics(request):
+    return render(request, "learning_logs/topics.html", {"topics": Topic.objects.all()})
+
+
+# Escreva a view new_topic aqui
+
+
+app_name = "learning_logs"
+urlpatterns = [
+    path("topics/", topics, name="topics"),
+    # adicione a URL new_topic
+]
+
+TEMPLATES = {
+    "learning_logs/topics.html": "{% for t in topics %}<li>{{ t }}</li>{% endfor %}",
+    # adicione o template learning_logs/new_topic.html
+}
+''') + "\n",
+            "dica": "if request.method != 'POST': form = TopicForm() / else: form = TopicForm(data=request.POST); if form.is_valid(): "
+                    "form.save(); return redirect('learning_logs:topics'). No fim, return render(...).",
+            "solucao": _MODELS_18 + _c('''
+
+
+from django import forms
+from django.shortcuts import render, redirect
+from django.urls import path
+
+
+class TopicForm(forms.ModelForm):
+    class Meta:
+        model = Topic
+        fields = ["text"]
+        labels = {"text": ""}
+
+
+def topics(request):
+    return render(request, "learning_logs/topics.html", {"topics": Topic.objects.all()})
+
+
+def new_topic(request):
+    if request.method != "POST":
+        form = TopicForm()
+    else:
+        form = TopicForm(data=request.POST)
+        if form.is_valid():
+            form.save()
+            return redirect("learning_logs:topics")
+    return render(request, "learning_logs/new_topic.html", {"form": form})
+
+
+app_name = "learning_logs"
+urlpatterns = [
+    path("topics/", topics, name="topics"),
+    path("new_topic/", new_topic, name="new_topic"),
+]
+
+TEMPLATES = {
+    "learning_logs/topics.html": "{% for t in topics %}<li>{{ t }}</li>{% endfor %}",
+    "learning_logs/new_topic.html": """<p>Add a new topic:</p>
+<form action="{% url 'learning_logs:new_topic' %}" method="post">
+  {% csrf_token %}
+  {{ form.as_div }}
+  <button name="submit">Add topic</button>
+</form>""",
+}
+'''),
+            "casos": [caso([funcao("new_topic"),
+                            regra(lambda o, n, c: _teste_new_topic(n),
+                                  "Teste: GET em /new_topic/ mostra o campo text e o csrf_token; POST com 'Xadrez' salva e "
+                                  "redireciona para /topics/; POST com texto vazio continua na página (200), mostra o erro "
+                                  "'obrigatório' e não salva nada.")])],
+        },
+        {
+            "titulo": "Nova anotação",
+            "enunciado": "Crie a view `new_entry(request, topic_id)` com a URL 'new_entry/<int:topic_id>/' (name='new_entry'):\n"
+                         "• GET: mostra o nome do tópico e o EntryForm vazio, no template 'learning_logs/new_entry.html'\n"
+                         "• POST válido: salva com commit=False, liga ao tópico, grava e redireciona para "
+                         "'learning_logs:topic' com topic_id",
+            "inicial": _MODELS_18 + "\n\n" + _FORMS_19 + _c('''
+
+
+from django.shortcuts import render, redirect
+from django.urls import path
+
+
+def topic(request, topic_id):
+    return render(request, "learning_logs/topic.html", {"topic": Topic.objects.get(id=topic_id)})
+
+
+# Escreva a view new_entry
+
+
+app_name = "learning_logs"
+urlpatterns = [
+    path("topics/<int:topic_id>/", topic, name="topic"),
+]
+
+TEMPLATES = {
+    "learning_logs/topic.html": "<h1>{{ topic }}</h1>",
+}
+''') + "\n",
+            "dica": "new_entry = form.save(commit=False); new_entry.topic = topic; new_entry.save(); "
+                    "return redirect('learning_logs:topic', topic_id=topic_id).",
+            "solucao": _MODELS_18 + "\n\n" + _FORMS_19 + _c('''
+
+
+from django.shortcuts import render, redirect
+from django.urls import path
+
+
+def topic(request, topic_id):
+    return render(request, "learning_logs/topic.html", {"topic": Topic.objects.get(id=topic_id)})
+
+
+def new_entry(request, topic_id):
+    topic = Topic.objects.get(id=topic_id)
+    if request.method != "POST":
+        form = EntryForm()
+    else:
+        form = EntryForm(data=request.POST)
+        if form.is_valid():
+            new_entry = form.save(commit=False)
+            new_entry.topic = topic
+            new_entry.save()
+            return redirect("learning_logs:topic", topic_id=topic_id)
+    return render(request, "learning_logs/new_entry.html", {"topic": topic, "form": form})
+
+
+app_name = "learning_logs"
+urlpatterns = [
+    path("topics/<int:topic_id>/", topic, name="topic"),
+    path("new_entry/<int:topic_id>/", new_entry, name="new_entry"),
+]
+
+TEMPLATES = {
+    "learning_logs/topic.html": "<h1>{{ topic }}</h1>",
+    "learning_logs/new_entry.html": """<p>{{ topic }}</p>
+<form action="{% url 'learning_logs:new_entry' topic.id %}" method="post">
+  {% csrf_token %}
+  {{ form.as_div }}
+  <button name="submit">Add entry</button>
+</form>""",
+}
+'''),
+            "casos": [caso([funcao("new_entry"),
+                            regra(lambda o, n, c: _teste_new_entry(n),
+                                  "Teste: GET em /new_entry/1/ mostra o tópico e o campo text; POST com um texto cria a "
+                                  "anotação ligada ao tópico 1 e redireciona para /topics/1/.")])],
+        },
+        {
+            "titulo": "Editando anotações",
+            "enunciado": "Crie a view `edit_entry(request, entry_id)` com a URL 'edit_entry/<int:entry_id>/' (name='edit_entry'):\n"
+                         "• GET: mostra o EntryForm já preenchido com o texto atual ('learning_logs/edit_entry.html')\n"
+                         "• POST válido: atualiza a MESMA anotação e redireciona para a página do tópico dela",
+            "inicial": _MODELS_18 + "\n\n" + _FORMS_19 + _c('''
+
+
+from django.shortcuts import render, redirect
+from django.urls import path
+
+
+def topic(request, topic_id):
+    return render(request, "learning_logs/topic.html", {"topic": Topic.objects.get(id=topic_id)})
+
+
+# Escreva a view edit_entry
+
+
+app_name = "learning_logs"
+urlpatterns = [
+    path("topics/<int:topic_id>/", topic, name="topic"),
+]
+
+TEMPLATES = {
+    "learning_logs/topic.html": "<h1>{{ topic }}</h1>",
+}
+''') + "\n",
+            "dica": "form = EntryForm(instance=entry) no GET e EntryForm(instance=entry, data=request.POST) no POST.",
+            "solucao": _MODELS_18 + "\n\n" + _FORMS_19 + _c('''
+
+
+from django.shortcuts import render, redirect
+from django.urls import path
+
+
+def topic(request, topic_id):
+    return render(request, "learning_logs/topic.html", {"topic": Topic.objects.get(id=topic_id)})
+
+
+def edit_entry(request, entry_id):
+    entry = Entry.objects.get(id=entry_id)
+    topic = entry.topic
+    if request.method != "POST":
+        form = EntryForm(instance=entry)
+    else:
+        form = EntryForm(instance=entry, data=request.POST)
+        if form.is_valid():
+            form.save()
+            return redirect("learning_logs:topic", topic_id=topic.id)
+    return render(request, "learning_logs/edit_entry.html", {"entry": entry, "topic": topic, "form": form})
+
+
+app_name = "learning_logs"
+urlpatterns = [
+    path("topics/<int:topic_id>/", topic, name="topic"),
+    path("edit_entry/<int:entry_id>/", edit_entry, name="edit_entry"),
+]
+
+TEMPLATES = {
+    "learning_logs/topic.html": "<h1>{{ topic }}</h1>",
+    "learning_logs/edit_entry.html": """<p>{{ topic }}</p>
+<form action="{% url 'learning_logs:edit_entry' entry.id %}" method="post">
+  {% csrf_token %}
+  {{ form.as_div }}
+  <button name="submit">Save changes</button>
+</form>""",
+}
+'''),
+            "casos": [caso([funcao("edit_entry"),
+                            regra(lambda o, n, c: _teste_edit_entry(n),
+                                  "Teste: GET em /edit_entry/1/ mostra o texto atual da anotação; POST com um texto novo "
+                                  "atualiza a mesma anotação (sem criar outra) e redireciona para /topics/<id do tópico>/.")])],
+        },
+        {
+            "titulo": "Cadastro de usuários",
+            "enunciado": "Crie a view `register` com o UserCreationForm:\n"
+                         "• GET: formulário vazio no template 'registration/register.html'\n"
+                         "• POST válido: salva o usuário, faz login(request, new_user) e redireciona para 'learning_logs:index'\n"
+                         "• POST inválido (ex.: senhas diferentes): mostra o formulário de novo\n"
+                         "Adicione path('register/', register, name='register') em users_urls.",
+            "inicial": _c('''
+from django.contrib.auth import login
+from django.contrib.auth.forms import UserCreationForm
+from django.shortcuts import render, redirect
+from django.urls import path, include
+
+
+def index(request):
+    return render(request, "learning_logs/index.html")
+
+
+# Escreva a view register
+
+
+ll_urls = [path("", index, name="index")]
+users_urls = [
+    path("", include("django.contrib.auth.urls")),
+    # adicione a URL register
+]
+urlpatterns = [
+    path("", include((ll_urls, "learning_logs"))),
+    path("users/", include((users_urls, "users"))),
+]
+
+TEMPLATES = {
+    "learning_logs/index.html": "<h1>Learning Log</h1>",
+    # adicione o template registration/register.html
+}
+''') + "\n",
+            "dica": "Igual ao new_topic, mas com UserCreationForm. Depois de new_user = form.save(), chame login(request, new_user).",
+            "solucao": _c('''
+from django.contrib.auth import login
+from django.contrib.auth.forms import UserCreationForm
+from django.shortcuts import render, redirect
+from django.urls import path, include
+
+
+def index(request):
+    return render(request, "learning_logs/index.html")
+
+
+def register(request):
+    if request.method != "POST":
+        form = UserCreationForm()
+    else:
+        form = UserCreationForm(data=request.POST)
+        if form.is_valid():
+            new_user = form.save()
+            login(request, new_user)
+            return redirect("learning_logs:index")
+    return render(request, "registration/register.html", {"form": form})
+
+
+ll_urls = [path("", index, name="index")]
+users_urls = [
+    path("", include("django.contrib.auth.urls")),
+    path("register/", register, name="register"),
+]
+urlpatterns = [
+    path("", include((ll_urls, "learning_logs"))),
+    path("users/", include((users_urls, "users"))),
+]
+
+TEMPLATES = {
+    "learning_logs/index.html": "<h1>Learning Log</h1>",
+    "registration/register.html": """<form action="{% url 'users:register' %}" method="post">
+  {% csrf_token %}
+  {{ form.as_div }}
+  <button name="submit">Register</button>
+</form>""",
+}
+'''),
+            "casos": [caso([funcao("register"),
+                            regra(lambda o, n, c: _teste_register(n),
+                                  "Teste: GET em /users/register/ mostra os campos de senha; senhas diferentes não criam "
+                                  "usuário (status 200); senhas iguais criam 'ana', já deixam a pessoa logada e "
+                                  "redirecionam para '/'.")])],
+        },
+        {
+            "titulo": "Caça-bugs: tópicos à mostra",
+            "enunciado": "A Bia está vendo o tópico secreto da Ana na lista dela! Conserte a view topics para cada pessoa "
+                         "ver só os próprios tópicos.",
+            "inicial": _MODELS_19 + _c('''
+
+
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import User
+from django.shortcuts import render
+from django.urls import path, include
+from django.test import Client
+
+
+@login_required
+def topics(request):
+    topics = Topic.objects.order_by("date_added")
+    return render(request, "learning_logs/topics.html", {"topics": topics})
+
+
+urlpatterns = [
+    path("", include(([path("topics/", topics, name="topics")], "learning_logs"))),
+    path("users/", include(([path("", include("django.contrib.auth.urls"))], "users"))),
+]
+LOGIN_URL = "users:login"
+TEMPLATES = {"learning_logs/topics.html": "{% for t in topics %}<li>{{ t }}</li>{% endfor %}"}
+
+ana = User.objects.create_user("ana", password="senha-da-ana")
+bia = User.objects.create_user("bia", password="senha-da-bia")
+Topic.objects.create(text="Segredo da Ana", owner=ana)
+Topic.objects.create(text="Plano da Bia", owner=bia)
+
+navegador = Client()
+navegador.force_login(bia)
+print(navegador.get("/topics/").content)
+''') + "\n",
+            "dica": "Troque Topic.objects.order_by(...) por Topic.objects.filter(owner=request.user).order_by(...).",
+            "solucao": _MODELS_19 + _c('''
+
+
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import User
+from django.shortcuts import render
+from django.urls import path, include
+from django.test import Client
+
+
+@login_required
+def topics(request):
+    topics = Topic.objects.filter(owner=request.user).order_by("date_added")
+    return render(request, "learning_logs/topics.html", {"topics": topics})
+
+
+urlpatterns = [
+    path("", include(([path("topics/", topics, name="topics")], "learning_logs"))),
+    path("users/", include(([path("", include("django.contrib.auth.urls"))], "users"))),
+]
+LOGIN_URL = "users:login"
+TEMPLATES = {"learning_logs/topics.html": "{% for t in topics %}<li>{{ t }}</li>{% endfor %}"}
+
+ana = User.objects.create_user("ana", password="senha-da-ana")
+bia = User.objects.create_user("bia", password="senha-da-bia")
+Topic.objects.create(text="Segredo da Ana", owner=ana)
+Topic.objects.create(text="Plano da Bia", owner=bia)
+
+navegador = Client()
+navegador.force_login(bia)
+print(navegador.get("/topics/").content)
+'''),
+            "casos": [caso([saida("<li>Plano da Bia</li>"),
+                            regra(lambda o, n, c: _teste_vazamento(n),
+                                  "Cada pessoa deveria ver só os próprios tópicos em /topics/.")])],
+        },
+    ],
+    "chefe": {
+        "titulo": "O Guardião das Contas",
+        "enunciado": "Os models (com owner), o TopicForm, as URLs e os templates já estão prontos. Escreva as três views "
+                     "com segurança:\n\n"
+                     "• `topics`: só para quem entrou (@login_required) e só com os tópicos de quem está logado\n"
+                     "• `topic(request, topic_id)`: só para quem entrou; se o tópico for de outra pessoa, raise Http404\n"
+                     "• `new_topic`: só para quem entrou; o novo tópico ganha owner = request.user e a view "
+                     "redireciona para 'learning_logs:topics'\n\n"
+                     "O Verificar testa com duas contas (ana e bia) e com um visitante sem login.",
+        "inicial": _MODELS_19 + _c('''
+
+
+from django import forms
+from django.contrib.auth.decorators import login_required
+from django.http import Http404
+from django.shortcuts import render, redirect
+from django.urls import path, include
+
+
+class TopicForm(forms.ModelForm):
+    class Meta:
+        model = Topic
+        fields = ["text"]
+        labels = {"text": ""}
+
+
+# Escreva as views topics, topic e new_topic
+
+
+ll_urls = [
+    path("topics/", topics, name="topics"),
+    path("topics/<int:topic_id>/", topic, name="topic"),
+    path("new_topic/", new_topic, name="new_topic"),
+]
+urlpatterns = [
+    path("", include((ll_urls, "learning_logs"))),
+    path("users/", include(([path("", include("django.contrib.auth.urls"))], "users"))),
+]
+LOGIN_URL = "users:login"
+
+TEMPLATES = {
+    "learning_logs/topics.html": "{% for t in topics %}<li>{{ t }}</li>{% empty %}<li>Nada ainda.</li>{% endfor %}",
+    "learning_logs/topic.html": "<h1>{{ topic }}</h1>",
+    "learning_logs/new_topic.html": "<form method=\\"post\\">{% csrf_token %}{{ form.as_div }}<button>Add</button></form>",
+}
+''') + "\n",
+        "dica": "Lembre do @login_required em cima de cada view. Em new_topic: new_topic = form.save(commit=False), "
+                "new_topic.owner = request.user, new_topic.save().",
+        "solucao": _MODELS_19 + _c('''
+
+
+from django import forms
+from django.contrib.auth.decorators import login_required
+from django.http import Http404
+from django.shortcuts import render, redirect
+from django.urls import path, include
+
+
+class TopicForm(forms.ModelForm):
+    class Meta:
+        model = Topic
+        fields = ["text"]
+        labels = {"text": ""}
+
+
+@login_required
+def topics(request):
+    topics = Topic.objects.filter(owner=request.user).order_by("date_added")
+    return render(request, "learning_logs/topics.html", {"topics": topics})
+
+
+@login_required
+def topic(request, topic_id):
+    topic = Topic.objects.get(id=topic_id)
+    if topic.owner != request.user:
+        raise Http404
+    return render(request, "learning_logs/topic.html", {"topic": topic})
+
+
+@login_required
+def new_topic(request):
+    if request.method != "POST":
+        form = TopicForm()
+    else:
+        form = TopicForm(data=request.POST)
+        if form.is_valid():
+            new_topic = form.save(commit=False)
+            new_topic.owner = request.user
+            new_topic.save()
+            return redirect("learning_logs:topics")
+    return render(request, "learning_logs/new_topic.html", {"form": form})
+
+
+ll_urls = [
+    path("topics/", topics, name="topics"),
+    path("topics/<int:topic_id>/", topic, name="topic"),
+    path("new_topic/", new_topic, name="new_topic"),
+]
+urlpatterns = [
+    path("", include((ll_urls, "learning_logs"))),
+    path("users/", include(([path("", include("django.contrib.auth.urls"))], "users"))),
+]
+LOGIN_URL = "users:login"
+
+TEMPLATES = {
+    "learning_logs/topics.html": "{% for t in topics %}<li>{{ t }}</li>{% empty %}<li>Nada ainda.</li>{% endfor %}",
+    "learning_logs/topic.html": "<h1>{{ topic }}</h1>",
+    "learning_logs/new_topic.html": "<form method=\\"post\\">{% csrf_token %}{{ form.as_div }}<button>Add</button></form>",
+}
+'''),
+        "casos": [caso([funcao("topics"), funcao("topic"), funcao("new_topic"),
+                        regra(lambda o, n, c: _teste_guardiao(n),
+                              "Teste: sem login, /topics/ e /topics/1/ redirecionam para /users/login/; a Ana vê só os "
+                              "tópicos dela, abre o dela e recebe 404 no da Bia; o tópico que a Ana cria fica com "
+                              "owner = ana e não aparece para a Bia.")])],
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# CAPÍTULO 20: Estilo e deploy
+# ---------------------------------------------------------------------------
+
+CAP20 = {
+    "num": 20,
+    "titulo": "Web: Estilo e Deploy",
+    "subtitulo": "Bootstrap, configurações seguras, páginas de erro e publicação",
+    "licoes": [
+        {
+            "titulo": "Bootstrap: deixando bonito",
+            "texto": [
+                "O **Bootstrap** é uma coleção de estilos prontos: você coloca classes no HTML (como `navbar`, `container`, "
+                "`btn btn-primary`) e a página fica com cara profissional.",
+                "O livro usa o pacote `django-bootstrap5`: `pip install django-bootstrap5` e `'django_bootstrap5'` em "
+                "`INSTALLED_APPS`. No `base.html`: `{% load django_bootstrap5 %}`, `{% bootstrap_css %}` e `{% bootstrap_javascript %}`.",
+                "Nos formulários, `{% bootstrap_form form %}` desenha os campos com o estilo certo e "
+                "`{% bootstrap_button button_type='submit' content='Salvar' %}` cria o botão.",
+                "O `base.html` ganha uma barra de navegação (`<nav class=\"navbar ...\">`) com links para as páginas e, "
+                "no conteúdo, um `<main class=\"container\">`.",
+            ],
+            "exemplo": _MODELS_18 + _c('''
+
+
+from django import forms
+from django.shortcuts import render
+from django.urls import path
+from django.test import Client
+
+
+class TopicForm(forms.ModelForm):
+    class Meta:
+        model = Topic
+        fields = ["text"]
+        labels = {"text": ""}
+
+
+def new_topic(request):
+    return render(request, "learning_logs/new_topic.html", {"form": TopicForm()})
+
+
+app_name = "learning_logs"
+urlpatterns = [path("new_topic/", new_topic, name="new_topic")]
+
+TEMPLATES = {
+    "learning_logs/base.html": """{% load django_bootstrap5 %}{% bootstrap_css %}
+<nav class="navbar navbar-expand-md navbar-light bg-light mb-4 border">
+  <a class="navbar-brand" href="{% url 'learning_logs:new_topic' %}">Learning Log</a>
+</nav>
+<main class="container">{% block page_header %}{% endblock page_header %}{% block content %}{% endblock content %}</main>""",
+    "learning_logs/new_topic.html": """{% extends "learning_logs/base.html" %}
+{% load django_bootstrap5 %}
+{% block page_header %}<h2>Add a new topic:</h2>{% endblock page_header %}
+{% block content %}
+<form method="post">
+  {% csrf_token %}
+  {% bootstrap_form form %}
+  {% bootstrap_button button_type="submit" content="Add topic" %}
+</form>
+{% endblock content %}""",
+}
+
+print(Client().get("/new_topic/").content)
+'''),
+        },
+        {
+            "titulo": "Preparando para o deploy",
+            "texto": [
+                "**Deploy** é colocar o site num servidor da internet. Antes, algumas configurações mudam:",
+                "• `DEBUG = False`: em produção, os erros não podem mostrar o código para os visitantes.",
+                "• `ALLOWED_HOSTS`: a lista de endereços que podem servir o site (nunca `'*'`).",
+                "• `SECRET_KEY`: uma chave secreta longa, que **não** pode ir para o GitHub.",
+                "O jeito seguro é ler esses valores de **variáveis de ambiente**: `os.environ.get('DEBUG', 'False')`. "
+                "Atenção: variáveis de ambiente são sempre TEXTO. `'False'` é uma string, e strings não vazias são verdadeiras!",
+                "Também é preciso listar os pacotes num `requirements.txt` (`pip freeze > requirements.txt`) e "
+                "dizer ao Git o que ignorar num `.gitignore` (`ll_env/`, `__pycache__/`, `*.sqlite3`).",
+                "Neste exemplo, o PyQuest finge que as variáveis DEBUG e SECRET_KEY foram definidas no servidor.",
+            ],
+            "exemplo": _c('''
+import os
+from pathlib import Path
+
+DEBUG = os.environ.get("DEBUG", "False") == "True"
+SECRET_KEY = os.environ.get("SECRET_KEY", "")
+ALLOWED_HOSTS = ["meu-learning-log.exemplo.com"]
+
+print("DEBUG:", DEBUG)
+print("Chave secreta configurada?", len(SECRET_KEY) >= 30)
+
+Path("requirements.txt").write_text("Django==5.0.6\\ndjango-bootstrap5==24.2\\n")
+Path(".gitignore").write_text("ll_env/\\n__pycache__/\\n*.sqlite3\\n")
+print(Path("requirements.txt").read_text())
+
+# Cuidado com textos "falsos":
+print("bool('False') =", bool("False"))
+'''),
+            "ctx": {"__env__": {"DEBUG": "False", "SECRET_KEY": "chave-de-exemplo-bem-comprida-1234567890"}},
+        },
+        {
+            "titulo": "Páginas de erro e get_object_or_404",
+            "texto": [
+                "Se alguém abrir `/topics/999/` e o tópico não existir, `Topic.objects.get(id=999)` dá erro, e o "
+                "visitante vê uma página de erro do servidor (500). O certo é responder **404** (não encontrado).",
+                "`get_object_or_404(Topic, id=topic_id)` faz isso: devolve o objeto ou responde 404.",
+                "Com `DEBUG = False`, o Django usa os seus templates `404.html` e `500.html`. Eles podem estender o "
+                "`base.html`, para o erro manter o visual do site.",
+                "No PyQuest, o Client usa o `404.html` do seu dicionário TEMPLATES, se ele existir.",
+            ],
+            "exemplo": _MODELS_18 + _c('''
+
+
+from django.shortcuts import render, get_object_or_404
+from django.urls import path
+from django.test import Client
+
+
+def topic(request, topic_id):
+    topic = get_object_or_404(Topic, id=topic_id)
+    return render(request, "learning_logs/topic.html", {"topic": topic})
+
+
+app_name = "learning_logs"
+urlpatterns = [path("topics/<int:topic_id>/", topic, name="topic")]
+
+TEMPLATES = {
+    "learning_logs/base.html": '<nav class="navbar">Learning Log</nav>{% block content %}{% endblock content %}',
+    "learning_logs/topic.html": '{% extends "learning_logs/base.html" %}{% block content %}<h1>{{ topic }}</h1>{% endblock content %}',
+    "404.html": '{% extends "learning_logs/base.html" %}{% block content %}<h2>Página não encontrada :(</h2>{% endblock content %}',
+}
+
+Topic.objects.create(text="Xadrez")
+navegador = Client()
+r = navegador.get("/topics/1/")
+print(r.status_code, r.content)
+r = navegador.get("/topics/999/")
+print(r.status_code, r.content)
+'''),
+        },
+        {
+            "titulo": "Git e a publicação",
+            "texto": [
+                "O deploy do livro usa o **Git** (controle de versões) e um serviço de hospedagem. Os passos gerais:",
+                "• `git init`, `git add .` e `git commit -m 'Ready for deployment.'` guardam uma versão do projeto.",
+                "• O serviço de hospedagem (o livro usa a Platform.sh) recebe esse código, instala o `requirements.txt` "
+                "e roda o site. Outros serviços parecidos funcionam do mesmo jeito.",
+                "• No servidor, você define as variáveis de ambiente (SECRET_KEY, DEBUG) e roda as migrações.",
+                "## Antes de publicar, confira",
+                "DEBUG desligado, ALLOWED_HOSTS sem `'*'`, SECRET_KEY forte e fora do Git, e o `.gitignore` sem "
+                "esquecer o ambiente virtual e o banco local.",
+                "Os comandos exatos de cada serviço mudam com o tempo: siga a documentação atual dele.",
+            ],
+            "exemplo": _c('''
+def checar(config):
+    problemas = []
+    if config["DEBUG"]:
+        problemas.append("DEBUG ligado")
+    if not config["ALLOWED_HOSTS"] or "*" in config["ALLOWED_HOSTS"]:
+        problemas.append("ALLOWED_HOSTS inseguro")
+    if config["SECRET_KEY"].startswith("django-insecure") or len(config["SECRET_KEY"]) < 30:
+        problemas.append("SECRET_KEY fraca")
+    return problemas
+
+
+desenvolvimento = {"DEBUG": True, "ALLOWED_HOSTS": ["*"], "SECRET_KEY": "django-insecure-abc"}
+producao = {"DEBUG": False, "ALLOWED_HOSTS": ["meu-site.exemplo.com"], "SECRET_KEY": "x9" * 25}
+
+for nome, cfg in [("desenvolvimento", desenvolvimento), ("produção", producao)]:
+    problemas = checar(cfg)
+    print(f"{nome}: {'pronto para o deploy!' if not problemas else ', '.join(problemas)}")
+'''),
+        },
+    ],
+    "quiz": [
+        {"pergunta": "Para que serve o Bootstrap?",
+         "opcoes": ["Guardar senhas", "Dar estilo à página com classes prontas", "Criar o banco de dados", "Fazer o deploy"],
+         "correta": 1, "explicacao": "Classes como navbar, container e btn já vêm estilizadas."},
+        {"pergunta": "Por que DEBUG precisa ficar False em produção?",
+         "opcoes": ["Para o site ficar mais bonito", "Para os erros não mostrarem detalhes do código aos visitantes",
+                    "Porque o Bootstrap exige", "Para o login funcionar"], "correta": 1,
+         "explicacao": "Com DEBUG ligado, uma página de erro revela partes do código e das configurações."},
+        {"pergunta": "O que é mostrado?", "codigo": "print(bool('False'))",
+         "opcoes": ["False", "True", "Erro", "None"], "correta": 1,
+         "explicacao": "Toda string não vazia é verdadeira. Por isso compare o texto: valor == 'True'."},
+        {"pergunta": "Onde a SECRET_KEY de produção deve ficar?",
+         "opcoes": ["No README", "Numa variável de ambiente do servidor, fora do Git", "No template base.html", "Em requirements.txt"],
+         "correta": 1, "explicacao": "Segredos nunca vão para o repositório."},
+        {"pergunta": "O que `get_object_or_404(Topic, id=99)` faz se o tópico não existir?",
+         "opcoes": ["Cria o tópico", "Responde com a página 404", "Devolve None", "Trava o servidor"], "correta": 1,
+         "explicacao": "Em vez de um erro 500, o visitante recebe um 404 (não encontrado)."},
+        {"pergunta": "Para que serve o arquivo requirements.txt?",
+         "opcoes": ["Listar os pacotes que o servidor deve instalar", "Guardar as senhas", "Definir as URLs", "Configurar o Bootstrap"],
+         "correta": 0, "explicacao": "pip freeze > requirements.txt e o servidor instala as mesmas versões."},
+        {"pergunta": "O que NÃO deve entrar no Git, segundo o .gitignore do livro?",
+         "opcoes": ["models.py", "A pasta do ambiente virtual (ll_env/)", "urls.py", "Os templates"], "correta": 1,
+         "explicacao": "O ambiente virtual é recriado no servidor a partir do requirements.txt."},
+    ],
+    "desafios": [
+        {
+            "titulo": "Barra de navegação",
+            "enunciado": "Crie o template 'learning_logs/base.html' com:\n"
+                         "• um <nav class=\"navbar ...\"> com links para a página inicial ({% url 'learning_logs:index' %}) "
+                         "e para os tópicos ({% url 'learning_logs:topics' %})\n"
+                         "• um {% block content %}{% endblock content %}\n\n"
+                         "E faça o 'learning_logs/index.html' estender o base, com o parágrafo: Acompanhe o que você aprende.",
+            "inicial": _c('''
+from django.shortcuts import render
+from django.urls import path
+
+
+def index(request):
+    return render(request, "learning_logs/index.html")
+
+
+def topics(request):
+    return render(request, "learning_logs/topics.html")
+
+
+app_name = "learning_logs"
+urlpatterns = [
+    path("", index, name="index"),
+    path("topics/", topics, name="topics"),
+]
+
+TEMPLATES = {
+    "learning_logs/topics.html": "<p>Topics</p>",
+    # crie learning_logs/base.html e learning_logs/index.html
+}
+''') + "\n",
+            "dica": "No index.html: {% extends \"learning_logs/base.html\" %}{% block content %}<p>Acompanhe o que você aprende.</p>{% endblock content %}",
+            "solucao": _c('''
+from django.shortcuts import render
+from django.urls import path
+
+
+def index(request):
+    return render(request, "learning_logs/index.html")
+
+
+def topics(request):
+    return render(request, "learning_logs/topics.html")
+
+
+app_name = "learning_logs"
+urlpatterns = [
+    path("", index, name="index"),
+    path("topics/", topics, name="topics"),
+]
+
+TEMPLATES = {
+    "learning_logs/topics.html": "<p>Topics</p>",
+    "learning_logs/base.html": """{% load django_bootstrap5 %}
+<nav class="navbar navbar-expand-md navbar-light bg-light mb-4 border">
+  <a class="navbar-brand" href="{% url 'learning_logs:index' %}">Learning Log</a>
+  <a class="nav-link" href="{% url 'learning_logs:topics' %}">Topics</a>
+</nav>
+<main class="container">
+  {% block content %}{% endblock content %}
+</main>""",
+    "learning_logs/index.html": """{% extends "learning_logs/base.html" %}
+{% block content %}
+<p>Acompanhe o que você aprende.</p>
+{% endblock content %}""",
+}
+'''),
+            "casos": [caso([regra(lambda o, n, c: _teste_navbar(n),
+                                  "Teste: a página '/' deveria ter um <nav class=\"navbar...\">, os links href=\"/\" e "
+                                  "href=\"/topics/\" e o parágrafo 'Acompanhe o que você aprende.' (vindo do index que estende o base).")])],
+        },
+        {
+            "titulo": "Configuração por ambiente",
+            "enunciado": "Crie a função `carregar_config(env)`, que recebe um dicionário de variáveis de ambiente e devolve:\n"
+                         "{'DEBUG': ..., 'ALLOWED_HOSTS': [...], 'SECRET_KEY': ...}\n\n"
+                         "• DEBUG é True só se env['DEBUG'] for o texto 'True' (se não existir, False)\n"
+                         "• ALLOWED_HOSTS: o texto de env['ALLOWED_HOSTS'] separado por vírgulas, sem espaços e sem itens vazios "
+                         "(se não existir, lista vazia)\n"
+                         "• SECRET_KEY: env['SECRET_KEY'] (se não existir, deixe dar KeyError)",
+            "inicial": "def carregar_config(env):\n    pass\n",
+            "dica": "hosts = [h.strip() for h in env.get('ALLOWED_HOSTS', '').split(',') if h.strip()]",
+            "solucao": _c('''
+def carregar_config(env):
+    hosts = [h.strip() for h in env.get("ALLOWED_HOSTS", "").split(",") if h.strip()]
+    return {
+        "DEBUG": env.get("DEBUG", "False") == "True",
+        "ALLOWED_HOSTS": hosts,
+        "SECRET_KEY": env["SECRET_KEY"],
+    }
+'''),
+            "casos": [caso([funcao("carregar_config"),
+                            regra(lambda o, n, c: _teste_config(n),
+                                  "Teste: com DEBUG='True' e ALLOWED_HOSTS='meusite.com, www.meusite.com' → DEBUG True e os 2 hosts "
+                                  "sem espaços; sem DEBUG e sem hosts → False e []; DEBUG='False' → False; sem SECRET_KEY → KeyError.")])],
+        },
+        {
+            "titulo": "Arquivos do deploy",
+            "enunciado": "Usando o dicionário `pacotes` do código inicial, crie:\n"
+                         "• 'requirements.txt' com uma linha 'Nome==versão' por pacote, em ordem alfabética (ignorando "
+                         "maiúsculas)\n"
+                         "• '.gitignore' com três linhas: ll_env/, __pycache__/ e *.sqlite3",
+            "inicial": "from pathlib import Path\n\npacotes = {\"django-bootstrap5\": \"24.2\", \"Django\": \"5.0.6\", "
+                       "\"asgiref\": \"3.8.1\", \"sqlparse\": \"0.5.0\"}\n\n# Seu código aqui\n",
+            "dica": "for nome in sorted(pacotes, key=str.lower): linhas.append(f\"{nome}=={pacotes[nome]}\"). Depois Path(...).write_text('\\n'.join(linhas)).",
+            "solucao": _c('''
+from pathlib import Path
+
+pacotes = {"django-bootstrap5": "24.2", "Django": "5.0.6", "asgiref": "3.8.1", "sqlparse": "0.5.0"}
+
+linhas = [f"{nome}=={pacotes[nome]}" for nome in sorted(pacotes, key=str.lower)]
+Path("requirements.txt").write_text("\\n".join(linhas) + "\\n")
+Path(".gitignore").write_text("ll_env/\\n__pycache__/\\n*.sqlite3\\n")
+'''),
+            "casos": [caso([arquivo_igual("requirements.txt", "asgiref==3.8.1\nDjango==5.0.6\ndjango-bootstrap5==24.2\nsqlparse==0.5.0"),
+                            arquivo_igual(".gitignore", "ll_env/\n__pycache__/\n*.sqlite3")])],
+        },
+        {
+            "titulo": "404 caprichado",
+            "enunciado": "Melhore a página de um tópico:\n"
+                         "• na view topic, use get_object_or_404 em vez de Topic.objects.get\n"
+                         "• crie o template '404.html' que estende 'learning_logs/base.html' e mostra 'Página não encontrada'",
+            "inicial": _MODELS_18 + _c('''
+
+
+from django.shortcuts import render, get_object_or_404
+from django.urls import path
+
+
+def topic(request, topic_id):
+    topic = Topic.objects.get(id=topic_id)
+    return render(request, "learning_logs/topic.html", {"topic": topic})
+
+
+app_name = "learning_logs"
+urlpatterns = [path("topics/<int:topic_id>/", topic, name="topic")]
+
+TEMPLATES = {
+    "learning_logs/base.html": '<nav class="navbar navbar-light">Learning Log</nav>{% block content %}{% endblock content %}',
+    "learning_logs/topic.html": '{% extends "learning_logs/base.html" %}{% block content %}<h1>{{ topic }}</h1>{% endblock content %}',
+    # crie o 404.html
+}
+''') + "\n",
+            "dica": "topic = get_object_or_404(Topic, id=topic_id)",
+            "solucao": _MODELS_18 + _c('''
+
+
+from django.shortcuts import render, get_object_or_404
+from django.urls import path
+
+
+def topic(request, topic_id):
+    topic = get_object_or_404(Topic, id=topic_id)
+    return render(request, "learning_logs/topic.html", {"topic": topic})
+
+
+app_name = "learning_logs"
+urlpatterns = [path("topics/<int:topic_id>/", topic, name="topic")]
+
+TEMPLATES = {
+    "learning_logs/base.html": '<nav class="navbar navbar-light">Learning Log</nav>{% block content %}{% endblock content %}',
+    "learning_logs/topic.html": '{% extends "learning_logs/base.html" %}{% block content %}<h1>{{ topic }}</h1>{% endblock content %}',
+    "404.html": '{% extends "learning_logs/base.html" %}{% block content %}<h2>Página não encontrada</h2>{% endblock content %}',
+}
+'''),
+            "casos": [caso([regra(lambda o, n, c: _teste_404(n),
+                                  "Teste: /topics/1/ abre o tópico; /topics/99/ deveria dar status 404 com o template 404.html "
+                                  "(texto 'Página não encontrada' e a navbar do base).")])],
+        },
+        {
+            "titulo": "Caça-bugs: o DEBUG teimoso",
+            "enunciado": "No servidor, a variável de ambiente DEBUG vale 'False', mas o programa avisa que o debug está "
+                         "ligado! Conserte a leitura do DEBUG.\n\nO Verificar testa com DEBUG='False', DEBUG='True' e sem a variável.",
+            "inicial": _c('''
+import os
+
+DEBUG = os.environ.get("DEBUG", False)
+
+if DEBUG:
+    print("CUIDADO: debug ligado!")
+else:
+    print("Debug desligado. Tudo certo!")
+''') + "\n",
+            "dica": "Variáveis de ambiente são textos. Compare: os.environ.get('DEBUG', 'False') == 'True'.",
+            "solucao": _c('''
+import os
+
+DEBUG = os.environ.get("DEBUG", "False") == "True"
+
+if DEBUG:
+    print("CUIDADO: debug ligado!")
+else:
+    print("Debug desligado. Tudo certo!")
+'''),
+            "casos": _casos_debug(),
+        },
+        {
+            "titulo": "Checklist do deploy",
+            "enunciado": "Crie a função `checar_deploy(cfg)` que recebe {'DEBUG': ..., 'ALLOWED_HOSTS': [...], 'SECRET_KEY': ...} "
+                         "e devolve a lista de problemas, nesta ordem:\n"
+                         "• 'DEBUG ligado', se DEBUG for verdadeiro\n"
+                         "• 'ALLOWED_HOSTS inseguro', se a lista estiver vazia ou tiver '*'\n"
+                         "• 'SECRET_KEY fraca', se a chave começar com 'django-insecure' ou tiver menos de 30 caracteres\n"
+                         "Sem problemas, devolve [].",
+            "inicial": "def checar_deploy(cfg):\n    pass\n",
+            "dica": "Comece com problemas = [] e use três ifs separados, na ordem do enunciado.",
+            "solucao": _c('''
+def checar_deploy(cfg):
+    problemas = []
+    if cfg["DEBUG"]:
+        problemas.append("DEBUG ligado")
+    if not cfg["ALLOWED_HOSTS"] or "*" in cfg["ALLOWED_HOSTS"]:
+        problemas.append("ALLOWED_HOSTS inseguro")
+    if cfg["SECRET_KEY"].startswith("django-insecure") or len(cfg["SECRET_KEY"]) < 30:
+        problemas.append("SECRET_KEY fraca")
+    return problemas
+'''),
+            "casos": [caso([funcao("checar_deploy"),
+                            regra(lambda o, n, c: _teste_checklist(n),
+                                  "Teste: uma configuração boa devolve []; DEBUG True + ['*'] + chave 'django-insecure-...' "
+                                  "devolve os 3 problemas na ordem; hosts vazios e chave curta devolvem os 2 últimos.")])],
+        },
+    ],
+    "chefe": {
+        "titulo": "No Ar!",
+        "enunciado": "Hora de deixar o Learning Log pronto para o mundo. Models (com owner), URLs e os templates das páginas já "
+                     "estão prontos. Faça:\n\n"
+                     "1. DEBUG lido da variável de ambiente (True só se for o texto 'True').\n"
+                     "2. A função `check_topic_owner(topic, user)`: levanta Http404 se o dono do tópico não for o user.\n"
+                     "3. As views `topics` (só os tópicos do usuário logado) e `topic` (com get_object_or_404 e "
+                     "check_topic_owner), ambas com @login_required.\n"
+                     "4. Os templates 'learning_logs/base.html' (com <nav class=\"navbar ...\"> e {% block content %}) e "
+                     "'404.html' (estende o base e mostra 'Página não encontrada').",
+        "inicial": "import os\n" + _MODELS_19 + _c('''
+
+
+from django.contrib.auth.decorators import login_required
+from django.http import Http404
+from django.shortcuts import render, get_object_or_404
+from django.urls import path, include
+
+DEBUG = ...  # leia da variável de ambiente
+
+
+# Escreva check_topic_owner e as views topics e topic
+
+
+ll_urls = [
+    path("topics/", topics, name="topics"),
+    path("topics/<int:topic_id>/", topic, name="topic"),
+]
+urlpatterns = [
+    path("", include((ll_urls, "learning_logs"))),
+    path("users/", include(([path("", include("django.contrib.auth.urls"))], "users"))),
+]
+LOGIN_URL = "users:login"
+
+TEMPLATES = {
+    "learning_logs/topics.html": """{% extends "learning_logs/base.html" %}
+{% block content %}<ul>{% for t in topics %}<li><a href="{% url 'learning_logs:topic' t.id %}">{{ t }}</a></li>{% endfor %}</ul>{% endblock content %}""",
+    "learning_logs/topic.html": """{% extends "learning_logs/base.html" %}
+{% block content %}<h1>{{ topic }}</h1>{% endblock content %}""",
+    # crie learning_logs/base.html e 404.html
+}
+''') + "\n",
+        "dica": "def check_topic_owner(topic, user): if topic.owner != user: raise Http404. "
+                "Na view topic: topic = get_object_or_404(Topic, id=topic_id) e depois check_topic_owner(topic, request.user).",
+        "solucao": "import os\n" + _MODELS_19 + _c('''
+
+
+from django.contrib.auth.decorators import login_required
+from django.http import Http404
+from django.shortcuts import render, get_object_or_404
+from django.urls import path, include
+
+DEBUG = os.environ.get("DEBUG", "False") == "True"
+
+
+def check_topic_owner(topic, user):
+    """Garante que o tópico pertence ao usuário."""
+    if topic.owner != user:
+        raise Http404
+
+
+@login_required
+def topics(request):
+    topics = Topic.objects.filter(owner=request.user).order_by("date_added")
+    return render(request, "learning_logs/topics.html", {"topics": topics})
+
+
+@login_required
+def topic(request, topic_id):
+    topic = get_object_or_404(Topic, id=topic_id)
+    check_topic_owner(topic, request.user)
+    return render(request, "learning_logs/topic.html", {"topic": topic})
+
+
+ll_urls = [
+    path("topics/", topics, name="topics"),
+    path("topics/<int:topic_id>/", topic, name="topic"),
+]
+urlpatterns = [
+    path("", include((ll_urls, "learning_logs"))),
+    path("users/", include(([path("", include("django.contrib.auth.urls"))], "users"))),
+]
+LOGIN_URL = "users:login"
+
+TEMPLATES = {
+    "learning_logs/topics.html": """{% extends "learning_logs/base.html" %}
+{% block content %}<ul>{% for t in topics %}<li><a href="{% url 'learning_logs:topic' t.id %}">{{ t }}</a></li>{% endfor %}</ul>{% endblock content %}""",
+    "learning_logs/topic.html": """{% extends "learning_logs/base.html" %}
+{% block content %}<h1>{{ topic }}</h1>{% endblock content %}""",
+    "learning_logs/base.html": """{% load django_bootstrap5 %}
+<nav class="navbar navbar-expand-md navbar-light bg-light mb-4 border">
+  <a class="navbar-brand" href="{% url 'learning_logs:topics' %}">Learning Log</a>
+</nav>
+<main class="container">{% block content %}{% endblock content %}</main>""",
+    "404.html": """{% extends "learning_logs/base.html" %}
+{% block content %}<h2>Página não encontrada</h2>{% endblock content %}""",
+}
+'''),
+        "casos": _casos_no_ar(),
+    },
+}
+
+
 CAPITULOS = [CAP1, CAP2, CAP3, CAP4, CAP5, CAP6, CAP7, CAP8, CAP9, CAP10, CAP11, CAP12, CAP13, CAP14,
-             CAP15, CAP16, CAP17]
+             CAP15, CAP16, CAP17, CAP18, CAP19, CAP20]

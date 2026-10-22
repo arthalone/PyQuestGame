@@ -1,4 +1,4 @@
-PyQuest - Python gamificado (capítulos 1 a 17 do Curso Intensivo de Python)
+PyQuest - Python gamificado (capítulos 1 a 20 do Curso Intensivo de Python)
 ==========================================================================
 
 COMO GERAR O EXECUTÁVEL (Windows)
@@ -14,11 +14,11 @@ Dê dois cliques em Jogar_sem_exe.bat (ou rode: python pyquest.py).
 
 O QUE TEM NO APP
 - 11 capítulos de fundamentos, do print() até classes, arquivos, exceções e testes.
-- Projetos: Alien Invasion e Visualização de Dados (gráficos com matplotlib), com 6 capítulos.
-- 62 lições com exemplos executáveis.
-- 17 quizzes (120 perguntas), com combos e estrelas.
-- 96 desafios de código corrigidos automaticamente + 17 chefões.
-- XP, 17 níveis, sequência de dias, bônus diário e 14 conquistas.
+- Projetos: Alien Invasion, Visualização de Dados (gráficos com matplotlib) e Learning Log (app web com Django), com 9 capítulos.
+- 75 lições com exemplos executáveis.
+- 20 quizzes (141 perguntas), com combos e estrelas.
+- 114 desafios de código corrigidos automaticamente + 20 chefões.
+- XP, 19 níveis, sequência de dias, bônus diário e 14 conquistas.
 - Desafio Relâmpago (60 s contra o relógio) e Laboratório livre.
 - Dica (reduz XP pela metade) e solução (liberada após 3 tentativas).
 
@@ -27,4 +27,5 @@ Seu progresso fica salvo em %APPDATA%\PyQuest\progresso.json
 ARQUIVOS
 - pyquest.py   -> interface e regras do jogo
 - conteudo.py  -> lições, quizzes e desafios (fácil de editar e ampliar)
-- motor.py     -> executa e corrige o código do aluno (inclui o "pygame de treino" e o "requests de treino" dos projetos)
+- motor.py     -> executa e corrige o código do aluno (inclui o "pygame", o "requests" e o "Django" de treino dos projetos)
+- django_treino.py -> o "Django de treino" usado no projeto Learning Log

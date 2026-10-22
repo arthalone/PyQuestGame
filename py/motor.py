@@ -9,6 +9,8 @@ import sys
 import tempfile
 import warnings
 
+import django_treino
+
 ARQ = "<seu código>"
 os.environ.setdefault("MPLBACKEND", "Agg")  # gráficos viram imagens, sem abrir janelas
 warnings.filterwarnings("ignore", message=".*non-interactive.*")
@@ -36,6 +38,12 @@ DICAS_ERRO = {
     "EOFError": "O programa pediu mais respostas com input() do que o teste forneceu. Confira a condição de parada do laço.",
     "AssertionError": "Um assert falhou: o valor obtido não era o esperado.",
     "RecursionError": "A função chamou a si mesma vezes demais.",
+    "DoesNotExist": "Nenhum objeto combina com essa busca. Confira o id ou use get_object_or_404().",
+    "NoReverseMatch": "O Django não achou essa URL pelo nome. Confira o app_name, o name do path() e se passou os argumentos (como o id).",
+    "TemplateDoesNotExist": "Template não encontrado. Confira o nome no dicionário TEMPLATES e no render().",
+    "TemplateSyntaxError": "Erro de escrita no template. Confira se cada {% for %}, {% if %} e {% block %} foi fechado.",
+    "FieldError": "Esse campo não existe no model. Confira o nome usado no filter() ou no order_by().",
+    "IntegrityError": "O banco recusou o objeto: falta um campo obrigatório (como o topic ou o owner) ou há um valor repetido.",
     "ModuleNotFoundError": "Módulo não encontrado. Para gráficos, o app precisa do matplotlib (no PC: pip install matplotlib).",
 }
 
@@ -480,6 +488,7 @@ _RequestsHTTPError.__name__ = _RequestsHTTPError.__qualname__ = "HTTPError"
 
 
 def _instalar_pygame():
+    django_treino.instalar()
     sys.modules["requests"] = _REQUESTS
     sys.modules["requests.exceptions"] = _REQUESTS.exceptions
     sys.modules["pygame"] = _PYGAME
@@ -535,6 +544,7 @@ def executar(codigo, ctx=None):
     ctx = copy.deepcopy(ctx or {})
     entradas = ctx.pop("__entradas__", None)
     arquivos = ctx.pop("__arquivos__", None) or {}
+    env = ctx.pop("__env__", None) or {}
     fila = list(entradas) if entradas is not None else None
 
     def fake_input(prompt=""):
@@ -578,6 +588,12 @@ def executar(codigo, ctx=None):
     passos = [0]
     antigo_out = sys.stdout
     erro = None
+    env_antigo = {k: os.environ.get(k) for k in env}
+    for k, v in env.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = str(v)
     sys.stdout = out
     os.chdir(pasta)
     sys.settrace(_tracer(passos, lambda: out.tamanho() > MAX_SAIDA))
@@ -590,6 +606,11 @@ def executar(codigo, ctx=None):
     finally:
         sys.settrace(None)
         sys.stdout = antigo_out
+        for k, v in env_antigo.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
         if cwd_antigo:
             try:
                 os.chdir(cwd_antigo)
@@ -661,6 +682,8 @@ def descrever_erro(e):
         detalhe = str(e)
     cab = nome + (f" na linha {linha}" if linha else "") + (f": {detalhe}" if detalhe else "")
     dica = DICAS_ERRO.get(nome)
+    if nome == "ValueError" and "HttpResponse" in str(detalhe):
+        dica = "A view precisa terminar com return render(...), return redirect(...) ou return HttpResponse(...)."
     return cab + (f"\nDica: {dica}" if dica else "")
 
 
@@ -679,7 +702,9 @@ def _avaliar(fn, saida, ns, codigo):
     except LimiteExcedido:
         return False, "Ao testar seu código, ele executou passos demais. Há algum laço que nunca termina?"
     except Exception as e:  # noqa
-        if e.__traceback__ and any(f.tb_frame.f_code.co_filename == ARQ for f in _tb(e.__traceback__)):
+        if e.__traceback__ and any(f.tb_frame.f_code.co_filename == ARQ
+                                   or f.tb_frame.f_code.co_filename.endswith("django_treino.py")
+                                   for f in _tb(e.__traceback__)):
             return False, "Ao testar seu código, aconteceu um erro:\n" + descrever_erro(e)
         return False, None
     finally:
@@ -700,6 +725,9 @@ def descrever_contexto(ctx):
         partes.append("entradas digitadas: " + (", ".join(repr(x) for x in ent) if ent else "(nenhuma)"))
     if ctx.get("__arquivos__"):
         partes.append("arquivos: " + ", ".join(ctx["__arquivos__"]))
+    if ctx.get("__env__"):
+        partes.append("variáveis de ambiente: " + ", ".join(
+            f"{k}={v!r}" if v is not None else f"{k} (não existe)" for k, v in ctx["__env__"].items()))
     for k, v in ctx.items():
         if not k.startswith("__"):
             partes.append(f"{k} = {v!r}")

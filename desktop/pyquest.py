@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 PyQuest: aprenda Python jogando.
-Baseado na sequência dos capítulos 1 a 17 do livro "Curso Intensivo de Python" (Eric Matthes).
+Baseado na sequência dos capítulos 1 a 20 do livro "Curso Intensivo de Python" (Eric Matthes).
 
 Execute com:  python pyquest.py
 """
@@ -27,6 +27,8 @@ PROJETOS = [
      "desc": "Monte um jogo de nave: movimento, tiros, frota de alienígenas, colisões, placar e recorde."},
     {"id": "dados", "titulo": "Visualização de Dados", "icone": "📊", "caps": [15, 16, 17],
      "desc": "Transforme números em gráficos: matplotlib, passeio aleatório, clima em CSV, terremotos em JSON e APIs da web."},
+    {"id": "web", "titulo": "Learning Log (Django)", "icone": "🌐", "caps": [18, 19, 20],
+     "desc": "Construa um app web de verdade: models, páginas, formulários, contas de usuário, estilo e deploy."},
 ]
 
 
@@ -65,7 +67,7 @@ NIVEIS = [
     (1300, "Cavaleiro do For"), (1650, "Guardião do If"), (2000, "Senhor dos Dicionários"),
     (2400, "Domador de Laços"), (2850, "Arquiteto de Funções"), (3350, "Mestre das Classes"),
     (3900, "Pythonista"), (4400, "Piloto Estelar"), (4900, "Analista de Dados"),
-    (5500, "Mestre dos Projetos"), (6000, "Lenda do Terminal"),
+    (5500, "Mestre dos Projetos"), (6100, "Desenvolvedor Web"), (6650, "Arquiteto Django"), (7100, "Lenda do Terminal"),
 ]
 
 XP_LICAO = 10
@@ -656,7 +658,7 @@ class App(tk.Tk):
 
         rod = tk.Frame(sb, bg=C["painel"], padx=20, pady=16)
         rod.pack(side="bottom", fill="x")
-        self.lbl(rod, "Baseado nos capítulos 1–17 do livro Curso Intensivo de Python (Eric Matthes)", "p", C["mudo"],
+        self.lbl(rod, "Baseado nos capítulos 1–20 do livro Curso Intensivo de Python (Eric Matthes)", "p", C["mudo"],
                  wrap=220).pack(anchor="w")
 
     # ---------------- tela: mapa ----------------

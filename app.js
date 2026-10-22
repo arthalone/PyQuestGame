@@ -16,7 +16,7 @@
     [1300, "Cavaleiro do For"], [1650, "Guardião do If"], [2000, "Senhor dos Dicionários"],
     [2400, "Domador de Laços"], [2850, "Arquiteto de Funções"], [3350, "Mestre das Classes"],
     [3900, "Pythonista"], [4400, "Piloto Estelar"], [4900, "Analista de Dados"],
-    [5500, "Mestre dos Projetos"], [6000, "Lenda do Terminal"],
+    [5500, "Mestre dos Projetos"], [6100, "Desenvolvedor Web"], [6650, "Arquiteto Django"], [7100, "Lenda do Terminal"],
   ];
   const XP = { licao: 10, quiz: 50, desafio: 30, chefe: 100, bonus: 10, solucao: 5 };
   const APROVACAO = 0.7;
@@ -44,6 +44,8 @@
       desc: "Monte um jogo de nave: movimento, tiros, frota de alienígenas, colisões, placar e recorde." },
     { id: "dados", titulo: "Visualização de Dados", icone: "📊", caps: [15, 16, 17],
       desc: "Transforme números em gráficos: matplotlib, passeio aleatório, dados de clima em CSV, terremotos em JSON e APIs da web." },
+    { id: "web", titulo: "Learning Log (Django)", icone: "🌐", caps: [18, 19, 20],
+      desc: "Construa um app web de verdade: models, páginas, formulários, contas de usuário, estilo com Bootstrap e deploy." },
   ];
   const projetoDoCap = (n) => PROJETOS.find((p) => p.caps.includes(n));
 
@@ -266,7 +268,7 @@
     w: null, seq: 0, pend: new Map(), pronto: false, aquecendo: null, mpl: false,
     usaMpl: (codigo) => /\bmatplotlib\b/.test(codigo || ""),
     novo() {
-      this.w = new Worker("worker.js?v=4");
+      this.w = new Worker("worker.js?v=5");
       this.w.onmessage = (e) => {
         const { id, ok, r, erro } = e.data;
         const p = this.pend.get(id);
@@ -347,6 +349,7 @@
     const linhas = [];
     if (ctx.__entradas__) linhas.push("entradas digitadas: " + (ctx.__entradas__.length ? ctx.__entradas__.map(pyRepr).join(", ") : "(nenhuma)"));
     if (ctx.__arquivos__ && Object.keys(ctx.__arquivos__).length) linhas.push("arquivos na pasta: " + Object.keys(ctx.__arquivos__).join(", "));
+    if (ctx.__env__ && Object.keys(ctx.__env__).length) linhas.push("variáveis de ambiente: " + Object.entries(ctx.__env__).map(([k, v]) => v === null ? `${k} (não existe)` : `${k}=${pyRepr(v)}`).join(", "));
     for (const [k, v] of Object.entries(ctx)) if (!k.startsWith("__")) linhas.push(`${k} = ${pyRepr(v)}`);
     return linhas.join("\n");
   }
@@ -1221,7 +1224,7 @@
   async function iniciar() {
     carregar(CHAVE_CONVIDADO);
     try {
-      const r = await fetch("conteudo.json?v=4");
+      const r = await fetch("conteudo.json?v=5");
       CAPS = await r.json();
     } catch {
       app.innerHTML = `<p>Não consegui carregar o conteúdo. Recarregue a página.</p>`;
