@@ -15,7 +15,9 @@
 - 75 lições com exemplos que você executa com um clique
 - 141 perguntas de quiz, com combos e estrelas
 - 114 desafios de código e 20 chefões, com correção automática e mensagens de erro em português
-- XP, 19 níveis, bônus diário, sequência de dias e 14 conquistas
+- XP, 19 níveis, bônus diário, sequência de dias e 15 conquistas
+- **Desafio do Dia**: um desafio sorteado por dia entre os capítulos que você já liberou (+50 XP)
+- **Online agora** (no site): veja quem está estudando e em que parte do curso
 - Desafio Relâmpago: 60 segundos contra o relógio
 - Laboratório livre para experimentar sem valer nota
 - Nos capítulos do Alien Invasion, um "pygame de treino" embutido (Rect, Sprite, Group, eventos), sem janela: você treina a lógica do jogo direto no navegador
@@ -41,7 +43,9 @@
 - 75 lessons with one-click runnable examples
 - 141 quiz questions with combos and star ratings
 - 114 coding challenges plus 20 boss fights, auto-graded with beginner-friendly error messages
-- XP, 19 levels, daily bonus, streaks and 14 achievements
+- XP, 19 levels, daily bonus, streaks and 15 achievements
+- **Daily Challenge**: one challenge a day, picked from the chapters you've unlocked (+50 XP)
+- **Online now** (website): see who is studying and where they are in the course
 - Lightning Challenge: 60 seconds against the clock
 - Free-play Lab to experiment without pressure
 

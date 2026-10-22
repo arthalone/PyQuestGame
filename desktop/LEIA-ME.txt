@@ -18,7 +18,8 @@ O QUE TEM NO APP
 - 75 lições com exemplos executáveis.
 - 20 quizzes (141 perguntas), com combos e estrelas.
 - 114 desafios de código corrigidos automaticamente + 20 chefões.
-- XP, 19 níveis, sequência de dias, bônus diário e 14 conquistas.
+- XP, 19 níveis, sequência de dias, bônus diário e 15 conquistas.
+- Desafio do Dia: um desafio sorteado por dia entre os capítulos já liberados (+50 XP).
 - Desafio Relâmpago (60 s contra o relógio) e Laboratório livre.
 - Dica (reduz XP pela metade) e solução (liberada após 3 tentativas).
 

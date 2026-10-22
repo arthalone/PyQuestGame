@@ -76,6 +76,7 @@ XP_QUIZ_PASSOU = 20
 XP_DESAFIO = 30
 XP_CHEFE = 100
 XP_SOLUCAO = 5
+XP_DIARIO = 50
 QUIZ_APROVACAO = 0.7
 TEMPO_RELAMPAGO = 60
 
@@ -94,6 +95,7 @@ CONQUISTAS = [
     ("raio", "Raio Veloz", "Faça 8 ou mais acertos no Desafio Relâmpago."),
     ("cientista", "Cientista Maluco", "Execute 15 experimentos no Laboratório."),
     ("mil_xp", "Mil Pontos", "Alcance 1000 XP."),
+    ("desafiante", "Desafiante", "Complete 7 Desafios do Dia."),
 ]
 CONQ_DICT = {c[0]: c for c in CONQUISTAS}
 
@@ -123,6 +125,7 @@ class Progresso:
         "xp": 0, "feitos": [], "quiz_melhor": {}, "conquistas": [], "streak": 0,
         "ultimo_dia": "", "codigo": {}, "tentativas": {}, "dicas": [], "solucoes": [],
         "sem_dica": 0, "lab_execucoes": 0, "execucoes": 0, "recorde_relampago": 0,
+        "diarios": {}, "diario_hoje": None,
     }
 
     def __init__(self):
@@ -552,6 +555,8 @@ class App(tk.Tk):
             self.conquistar("streak7")
         if self.p.xp >= 1000:
             self.conquistar("mil_xp")
+        if len(self.p.diarios) >= 7:
+            self.conquistar("desafiante")
 
     def bonus_diario(self):
         hoje = datetime.date.today()
@@ -594,6 +599,41 @@ class App(tk.Tk):
         c = self.cap(n)
         feitos = sum(self.p.feito(f"c{n}-d{i}") for i in range(len(c["desafios"])))
         return self.p.feito(f"c{n}-quiz") and feitos >= min(3, len(c["desafios"]))
+
+    # ---------------- Desafio do Dia ----------------
+    def desafio_do_dia(self):
+        """Sorteia, uma vez por dia, um desafio dos capítulos já liberados."""
+        hoje = datetime.date.today().isoformat()
+        h = self.p.diario_hoje
+        if h and h.get("dia") == hoje and 0 < h["n"] <= len(CAPITULOS) and h["i"] < len(self.cap(h["n"])["desafios"]):
+            return h
+        pool = [(c["num"], i) for c in CAPITULOS if self.cap_liberado(c["num"]) for i in range(len(c["desafios"]))]
+        if not pool:
+            return None
+        semente = 2166136261
+        for ch in hoje + ":desktop":
+            semente = ((semente ^ ord(ch)) * 16777619) % 2 ** 32
+        n, i = pool[semente % len(pool)]
+        self.p.d["diario_hoje"] = {"dia": hoje, "n": n, "i": i}
+        self.p.salvar()
+        return self.p.d["diario_hoje"]
+
+    def sequencia_diario(self):
+        dias = set(self.p.diarios)
+        d = datetime.date.today()
+        if d.isoformat() not in dias:
+            d -= datetime.timedelta(days=1)
+        n = 0
+        while d.isoformat() in dias:
+            n += 1
+            d -= datetime.timedelta(days=1)
+        return n
+
+    def tela_diario(self):
+        h = self.desafio_do_dia()
+        if not h:
+            return self.ir(self.tela_mapa)
+        self.tela_desafio(h["n"], h["i"], diario=h["dia"])
 
     def proximo_passo(self):
         for c in CAPITULOS:
@@ -647,7 +687,7 @@ class App(tk.Tk):
         nav = tk.Frame(sb, bg=C["painel"], pady=16)
         nav.pack(fill="x")
         for texto, tela in (("☰   Mapa da Jornada", self.tela_mapa), ("◆   Projetos", self.tela_projetos),
-                            ("⚡   Desafio Relâmpago", self.tela_relampago),
+                            ("★   Desafio do Dia", self.tela_diario), ("⚡   Desafio Relâmpago", self.tela_relampago),
                             ("✎   Laboratório", self.tela_lab), ("★   Conquistas", self.tela_conquistas)):
             b = tk.Label(nav, text=texto, font=self.F["n"], fg=C["texto"], bg=C["painel"], anchor="w",
                          padx=26, pady=10, cursor="hand2")
@@ -692,6 +732,26 @@ class App(tk.Tk):
         else:
             self.lbl(cont, "Você completou a jornada! Use o Relâmpago e o Laboratório para continuar treinando.",
                      "h3", C["verde"], wrap=760).pack(anchor="w")
+
+        h = self.desafio_do_dia()
+        if h:
+            dd = self.cap(h["n"])["desafios"][h["i"]]
+            feito_hoje = h["dia"] in self.p.diarios
+            seq = self.sequencia_diario()
+            card = tk.Frame(f, bg=C["painel"], padx=20, pady=14, highlightthickness=1,
+                            highlightbackground=C["borda"] if feito_hoje else C["laranja"])
+            card.pack(fill="x", pady=(0, 22))
+            esq = tk.Frame(card, bg=C["painel"])
+            esq.pack(side="left", fill="x", expand=True)
+            self.lbl(esq, "⚡ DESAFIO DO DIA", "mini", C["laranja"]).pack(anchor="w")
+            self.lbl(esq, f"{dd['titulo']}  ·  Cap. {h['n']}", "h3").pack(anchor="w", pady=(2, 0))
+            info = "Feito hoje! Volte amanhã para um novo." if feito_hoje else f"Vale +{XP_DIARIO} XP."
+            if seq:
+                info += f"  Sequência: {seq} dia(s)."
+            self.lbl(esq, info, "p", C["mudo"]).pack(anchor="w")
+            self.botao(card, "Rever" if feito_hoje else "Aceitar  ⚡", lambda: self.ir(self.tela_diario),
+                       cor=C["painel2"] if feito_hoje else C["laranja"],
+                       fg=C["texto"] if feito_hoje else C["escuro"]).pack(side="right")
 
         self.lbl(f, "PARTE I · FUNDAMENTOS", "mini", C["roxo"]).pack(anchor="w", pady=(14, 2))
         for c in CAPITULOS:
@@ -1082,11 +1142,15 @@ class App(tk.Tk):
         render()
 
     # ---------------- tela: desafio ----------------
-    def tela_desafio(self, n, i):
+    def tela_desafio(self, n, i, diario=None):
         c = self.cap(n)
-        chefe = i == "chefe"
+        chefe = i == "chefe" and not diario
         d = c["chefe"] if chefe else c["desafios"][i]
-        did = f"c{n}-chefe" if chefe else f"c{n}-d{i}"
+        did = f"diario-{diario}" if diario else (f"c{n}-chefe" if chefe else f"c{n}-d{i}")
+        p_feito = self.p.feito
+
+        def feito(x):
+            return diario in self.p.diarios if diario and x == did else p_feito(x)
         if chefe and not self.chefe_liberado(n):
             return self.ir(self.tela_capitulo, n)
         ctx = d["casos"][0]["ctx"]
@@ -1096,11 +1160,14 @@ class App(tk.Tk):
         raiz.pack(fill="both", expand=True)
         cab = tk.Frame(raiz, bg=C["bg"])
         cab.pack(fill="x")
-        self.voltar(cab, f"Capítulo {n}", lambda: self.ir(self.tela_capitulo, n)).pack(side="left")
-        if self.p.feito(did):
+        if diario:
+            self.voltar(cab, "Mapa", lambda: self.ir(self.tela_mapa)).pack(side="left")
+        else:
+            self.voltar(cab, f"Capítulo {n}", lambda: self.ir(self.tela_capitulo, n)).pack(side="left")
+        if feito(did):
             self.lbl(cab, "✔ Concluído", "nb", C["verde"]).pack(side="right")
-        tipo = "CHEFÃO" if chefe else f"DESAFIO {i + 1} DE {len(c['desafios'])}"
-        self.lbl(raiz, f"{tipo}  ·  CAPÍTULO {n}", "mini", C["laranja"] if chefe else C["roxo"]).pack(anchor="w", pady=(12, 0))
+        tipo = "⚡ DESAFIO DO DIA" if diario else "CHEFÃO" if chefe else f"DESAFIO {i + 1} DE {len(c['desafios'])}"
+        self.lbl(raiz, f"{tipo}  ·  CAPÍTULO {n}", "mini", C["laranja"] if chefe or diario else C["roxo"]).pack(anchor="w", pady=(12, 0))
         self.lbl(raiz, ("♛  " if chefe else "") + d["titulo"], "h1").pack(anchor="w", pady=(0, 10))
 
         corpo = tk.Frame(raiz, bg=C["bg"])
@@ -1112,7 +1179,7 @@ class App(tk.Tk):
         # coluna esquerda: enunciado
         esq = tk.Frame(corpo, bg=C["painel"], padx=18, pady=16)
         esq.grid(row=0, column=0, sticky="nsew", padx=(0, 14))
-        base_xp = XP_CHEFE if chefe else XP_DESAFIO
+        base_xp = XP_DIARIO if diario else XP_CHEFE if chefe else XP_DESAFIO
         self.lbl(esq, "MISSÃO", "mini", C["mudo"]).pack(anchor="w")
         enun = tk.Text(esq, bg=C["painel"], fg=C["texto"], font=self.F["n"], wrap="word", relief="flat", bd=0,
                        highlightthickness=0, height=10, cursor="arrow", spacing3=4)
@@ -1131,7 +1198,7 @@ class App(tk.Tk):
         dica_box.pack(fill="x")
 
         def atualizar_recompensa():
-            if self.p.feito(did):
+            if feito(did):
                 recompensa.config(text="Recompensa já recebida. Treine à vontade!", fg=C["mudo"])
             elif did in self.p.solucoes:
                 recompensa.config(text=f"Recompensa: +{XP_SOLUCAO} XP (solução vista)", fg=C["laranja"])
@@ -1190,13 +1257,18 @@ class App(tk.Tk):
                 t = self.p.tentativas[did]
                 out.escrever("✘ Ainda não. ", "erro")
                 out.escrever(msg + "\n", "erro")
-                if t >= 3 and did not in self.p.solucoes and not self.p.feito(did):
+                if t >= 3 and did not in self.p.solucoes and not feito(did):
                     out.escrever(f"\n{t} tentativas. Se quiser, o botão 'Ver solução' já está liberado.\n", "info")
-                b_sol.set_ativo(t >= 3 or self.p.feito(did))
+                b_sol.set_ativo(t >= 3 or feito(did))
                 self.p.salvar()
                 return
             out.escrever("✔ " + msg + "\n", "ok")
-            if not self.p.feito(did):
+            if diario and not feito(did):
+                ganho = base_xp // 2 if did in self.p.dicas else base_xp
+                self.p.d["diarios"][diario] = f"c{n}-d{i}"
+                seq = self.sequencia_diario()
+                self.ganhar_xp(ganho, f"Desafio do Dia ({seq} dia(s) seguido(s))")
+            elif not feito(did):
                 if did in self.p.solucoes:
                     ganho = XP_SOLUCAO
                 elif did in self.p.dicas:
@@ -1218,12 +1290,14 @@ class App(tk.Tk):
             win = tk.Frame(dir_, bg=C["painel"], padx=16, pady=12, highlightthickness=2,
                            highlightbackground=C["verde"])
             win.place(relx=0.5, rely=0.35, anchor="center")
-            tk.Label(win, text="♛ CHEFÃO DERROTADO!" if chefe else "✔ DESAFIO CONCLUÍDO!", font=self.F["h2"],
+            tk.Label(win, text="⚡ DESAFIO DO DIA CONCLUÍDO!" if diario else "♛ CHEFÃO DERROTADO!" if chefe else "✔ DESAFIO CONCLUÍDO!", font=self.F["h2"],
                      fg=C["verde"], bg=C["painel"]).pack(padx=20, pady=(6, 10))
             bt = tk.Frame(win, bg=C["painel"])
             bt.pack()
             self.botao(bt, "Continuar no editor", win.destroy, cor=C["painel2"], fg=C["texto"]).pack(side="left", padx=4)
-            if chefe:
+            if diario:
+                self.botao(bt, "Voltar ao mapa  →", lambda: self.ir(self.tela_mapa)).pack(side="left", padx=4)
+            elif chefe:
                 pj = projeto_do_cap(n)
                 if n == ULTIMO_FUNDAMENTO:
                     self.botao(bt, "Ver os projetos  →", lambda: self.ir(self.tela_projetos)).pack(side="left", padx=4)
@@ -1240,7 +1314,7 @@ class App(tk.Tk):
 
         def pedir_dica():
             if did not in self.p.dicas:
-                if not self.p.feito(did) and not messagebox.askyesno(
+                if not feito(did) and not messagebox.askyesno(
                         "Usar dica?", "Usar a dica reduz a recompensa deste desafio pela metade. Continuar?"):
                     return
                 self.p.d["dicas"].append(did)
@@ -1249,7 +1323,7 @@ class App(tk.Tk):
             atualizar_recompensa()
 
         def ver_solucao():
-            if did not in self.p.solucoes and not self.p.feito(did):
+            if did not in self.p.solucoes and not feito(did):
                 if not messagebox.askyesno("Ver solução?", f"Ver a solução reduz a recompensa para {XP_SOLUCAO} XP. "
                                                          "Você ainda vai precisar verificar o código. Continuar?"):
                     return
@@ -1270,8 +1344,9 @@ class App(tk.Tk):
         self.botao(bar, "✔  Verificar", verificar).pack(side="left", padx=8)
         self.botao(bar, "Dica", pedir_dica, cor=C["amarelo"]).pack(side="left")
         b_sol = self.botao(bar, "Ver solução", ver_solucao, cor=C["laranja"],
-                           ativo=tent >= 3 or self.p.feito(did) or did in self.p.solucoes)
-        b_sol.pack(side="left", padx=8)
+                           ativo=tent >= 3 or feito(did) or did in self.p.solucoes)
+        if not diario:
+            b_sol.pack(side="left", padx=8)
         self.botao(bar, "↺", reiniciar, cor=C["painel2"], fg=C["texto"], padx=10).pack(side="right")
         self.lbl(bar, "Ctrl+Enter executa  ", "p", C["mudo"]).pack(side="right")
         self.atalho("<Control-Return>", executar)

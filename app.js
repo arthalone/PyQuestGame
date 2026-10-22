@@ -18,7 +18,7 @@
     [3900, "Pythonista"], [4400, "Piloto Estelar"], [4900, "Analista de Dados"],
     [5500, "Mestre dos Projetos"], [6100, "Desenvolvedor Web"], [6650, "Arquiteto Django"], [7100, "Lenda do Terminal"],
   ];
-  const XP = { licao: 10, quiz: 50, desafio: 30, chefe: 100, bonus: 10, solucao: 5 };
+  const XP = { licao: 10, quiz: 50, desafio: 30, chefe: 100, bonus: 10, solucao: 5, diario: 50 };
   const APROVACAO = 0.7;
   const TEMPO_RELAMPAGO = 60;
   const CONQUISTAS = [
@@ -36,6 +36,7 @@
     ["raio", "Raio Veloz", "Faça 8 ou mais acertos no Desafio Relâmpago."],
     ["cientista", "Cientista Maluco", "Execute 15 experimentos no Laboratório."],
     ["mil_xp", "Mil Pontos", "Alcance 1000 XP."],
+    ["desafiante", "Desafiante", "Complete 7 Desafios do Dia."],
   ];
   const CONQ = Object.fromEntries(CONQUISTAS.map((c) => [c[0], c]));
   const ULTIMO_FUNDAMENTO = 11;
@@ -75,6 +76,7 @@
   const PADRAO = () => ({
     feitos: {}, bonus: [], quiz_melhor: {}, codigo: {}, tentativas: {}, dicas: [], solucoes: [],
     conquistas: [], recorde: 0, lab: 0, sem_dica: 0, pend: { progresso: [], relampago: [] },
+    diarios: {}, diario_hoje: null, oculto: false,
   });
   const CHAVE_CONVIDADO = "pyquest_v1_convidado";
   let S = PADRAO();
@@ -91,7 +93,8 @@
     salvarT = setTimeout(() => { try { localStorage.setItem(chaveLS, JSON.stringify(S)); } catch { /* sem storage */ } }, 150);
   }
   const feito = (id) => !!S.feitos[id];
-  const xpTotal = () => Object.values(S.feitos).reduce((a, f) => a + (f.xp || 0), 0) + S.bonus.length * XP.bonus;
+  const xpTotal = () => Object.values(S.feitos).reduce((a, f) => a + (f.xp || 0), 0) + S.bonus.length * XP.bonus +
+    Object.values(S.diarios || {}).reduce((a, f) => a + (f.xp || 0), 0);
   function sequencia() {
     const dias = new Set(S.bonus);
     const d = new Date(hojeSP() + "T12:00:00Z");
@@ -153,11 +156,12 @@
         await sb.from("relampago").insert({ user_id: usuario.id, acertos: Math.min(60, max) });
         S.pend.relampago = [];
       }
-      const [pr, bo, pf, rl] = await Promise.all([
+      const [pr, bo, pf, rl, dd] = await Promise.all([
         sb.from("progresso").select("item_id,ajuda,xp"),
         sb.from("bonus_diario").select("dia"),
         sb.from("perfis").select("apelido").eq("id", usuario.id).maybeSingle(),
         sb.from("relampago").select("acertos").order("acertos", { ascending: false }).limit(1),
+        sb.from("desafio_diario").select("dia,item_id,ajuda,xp"),
       ]);
       if (!pr.error) {
         const f = {};
@@ -166,6 +170,11 @@
         S.feitos = f;
       }
       if (!bo.error) S.bonus = bo.data.map((r) => r.dia);
+      if (!dd.error) {
+        const m = {};
+        for (const r of dd.data) m[r.dia] = { item: r.item_id, ajuda: r.ajuda, xp: r.xp };
+        S.diarios = m;
+      }
       if (!pf.error && pf.data) perfil = pf.data;
       if (!rl.error && rl.data[0]) S.recorde = Math.max(S.recorde, rl.data[0].acertos);
       salvar();
@@ -189,6 +198,7 @@
     }
     bonusDiario();
     desenharConta();
+    Online.conectar();
     rota();
   }
 
@@ -213,6 +223,7 @@
     if (nv.n > nivelAntes) toast(`Subiu de nível! Nível ${nv.n}: ${nv.titulo}`, "roxo");
     checarConquistas();
     desenharConta();
+    Online.atualizar();
   }
 
   function concluir(id, ajuda, motivo) {
@@ -228,6 +239,60 @@
       });
     }
     return xp;
+  }
+
+  // ---------------- Desafio do Dia ----------------
+  function hashTexto(t) {
+    let h = 2166136261;
+    for (const ch of t) { h ^= ch.codePointAt(0); h = Math.imul(h, 16777619) >>> 0; }
+    return h;
+  }
+  // Sorteia, uma vez por dia, um desafio dos capítulos que a pessoa já liberou.
+  function desafioDoDia() {
+    const dia = hojeSP();
+    const h = S.diario_hoje;
+    if (h && h.dia === dia && cap(h.n) && cap(h.n).desafios[h.i]) return h;
+    const pool = [];
+    for (const c of CAPS) if (capLiberado(c.num)) c.desafios.forEach((_, i) => pool.push([c.num, i]));
+    if (!pool.length) return null;
+    const [n, i] = pool[hashTexto(dia + ":" + (usuario?.id || "convidado")) % pool.length];
+    S.diario_hoje = { dia, n, i };
+    salvar();
+    return S.diario_hoje;
+  }
+  function sequenciaDiario() {
+    const dias = new Set(Object.keys(S.diarios || {}));
+    const d = new Date(hojeSP() + "T12:00:00Z");
+    if (!dias.has(fmtDia(d))) d.setUTCDate(d.getUTCDate() - 1);
+    let n = 0;
+    while (dias.has(fmtDia(d))) { n++; d.setUTCDate(d.getUTCDate() - 1); }
+    return n;
+  }
+  function concluirDiario(dia, item, ajuda) {
+    if (S.diarios[dia]) return 0;
+    const antes = nivelDe(xpTotal()).n;
+    const xp = ajuda === "dica" ? Math.floor(XP.diario / 2) : XP.diario;
+    S.diarios[dia] = { item, ajuda, xp };
+    salvar();
+    anunciarXP(xp, `Desafio do Dia (${sequenciaDiario()} dia${sequenciaDiario() > 1 ? "s" : ""} seguido${sequenciaDiario() > 1 ? "s" : ""})`, antes);
+    if (sb && usuario) sb.from("desafio_diario").insert({ user_id: usuario.id, item_id: item, ajuda }).then(() => {});
+    return xp;
+  }
+  function telaDiario() {
+    const h = desafioDoDia();
+    if (!h) { location.hash = "#/"; return; }
+    telaDesafio(h.n, h.i, { diario: h.dia });
+  }
+  function cartaoDiario() {
+    const h = desafioDoDia();
+    if (!h) return "";
+    const d = cap(h.n).desafios[h.i];
+    const ok = !!S.diarios[h.dia];
+    const seq = sequenciaDiario();
+    return `<div class="cartao diario-card ${ok ? "ok" : ""}"><div class="espaco"><div class="mini laranja">⚡ Desafio do Dia</div>
+      <h3>${esc(d.titulo)} <span class="mudo" style="font-weight:400;font-size:14px">· Cap. ${h.n}</span></h3>
+      <p class="mudo" style="margin:2px 0 0;font-size:13px">${ok ? "Feito hoje! Volte amanhã para um novo." : `Vale +${XP.diario} XP.`}${seq ? ` Sequência: ${seq} dia${seq > 1 ? "s" : ""}.` : ""}</p></div>
+      <a class="btn ${ok ? "neutro" : "laranja"}" href="#/diario">${ok ? "Rever" : "Aceitar ⚡"}</a></div>`;
   }
 
   function bonusDiario() {
@@ -259,6 +324,7 @@
     if (seq >= 3) conquistar("streak3");
     if (seq >= 7) conquistar("streak7");
     if (xpTotal() >= 1000) conquistar("mil_xp");
+    if (Object.keys(S.diarios || {}).length >= 7) conquistar("desafiante");
   }
 
   // =====================================================================
@@ -268,7 +334,7 @@
     w: null, seq: 0, pend: new Map(), pronto: false, aquecendo: null, mpl: false,
     usaMpl: (codigo) => /\bmatplotlib\b/.test(codigo || ""),
     novo() {
-      this.w = new Worker("worker.js?v=5");
+      this.w = new Worker("worker.js?v=6");
       this.w.onmessage = (e) => {
         const { id, ok, r, erro } = e.data;
         const p = this.pend.get(id);
@@ -532,6 +598,7 @@
     const seq = sequencia();
     let html = `<a class="chip-xp" href="#/perfil" title="${esc(nv.titulo)}"><span class="nv">${nv.n}</span>
       <span class="txt">${xp} XP</span>${seq ? `<span class="st">✹ ${seq}</span>` : ""}</a>`;
+    if (sb) html = `<a class="chip-online" id="chip-online" href="#/online" title="Quem está online agora"><i></i><span>${Math.max(Online.estado.length, 1)}</span></a>` + html;
     if (sb && !usuario) html += `<button class="btn google pq" id="btn-entrar">Entrar</button>`;
     $("#conta").innerHTML = html;
     const b = $("#btn-entrar");
@@ -541,6 +608,96 @@
     <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.4 30.2 0 24 0 14.6 0 6.6 5.4 2.7 13.2l7.8 6.1C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4 7.1-10 7.1-17.5z"/><path fill="#FBBC05" d="M10.5 28.7c-.5-1.4-.8-3-.8-4.7s.3-3.3.8-4.7l-7.8-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.8l7.8-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.5-5.8c-2.1 1.4-4.9 2.3-8.4 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.8 6.1C6.6 42.6 14.6 48 24 48z"/></svg>
     ${esc(txt)}</button>`;
   function ligarGoogle(raiz) { $$(".js-google", raiz).forEach((b) => (b.onclick = entrarGoogle)); }
+
+  // =====================================================================
+  // Quem está online (Supabase Realtime Presence: não grava nada no banco)
+  // =====================================================================
+  const Online = {
+    canal: null, chave: null, estado: [], onde: "Mapa da Jornada", desde: Date.now(), timer: null,
+    chaveVisitante() {
+      try {
+        let k = sessionStorage.getItem("pq_visitante");
+        if (!k) { k = "v-" + Math.random().toString(36).slice(2, 10); sessionStorage.setItem("pq_visitante", k); }
+        return k;
+      } catch { return "v-" + Math.random().toString(36).slice(2, 10); }
+    },
+    conectar() {
+      if (!sb) return;
+      const chave = usuario ? usuario.id : this.chaveVisitante();
+      if (this.canal && this.chave === chave) { this.atualizar(); return; }
+      if (this.canal) { try { sb.removeChannel(this.canal); } catch { /* */ } }
+      this.chave = chave;
+      this.estado = [];
+      this.canal = sb.channel("online", { config: { presence: { key: chave } } });
+      this.canal.on("presence", { event: "sync" }, () => this.ler());
+      this.canal.subscribe((st) => { if (st === "SUBSCRIBED") this.atualizar(); });
+    },
+    dados() {
+      if (!usuario) return { tipo: "visitante" };
+      if (S.oculto) return { tipo: "oculto" };
+      const xp = xpTotal();
+      return { tipo: "aluno", nome: perfil?.apelido || "Jogador", nivel: nivelDe(xp).n, xp, onde: this.onde, desde: this.desde };
+    },
+    atualizar() {
+      if (!this.canal) return;
+      clearTimeout(this.timer);
+      this.timer = setTimeout(() => { try { this.canal.track(this.dados()); } catch { /* */ } }, 400);
+    },
+    ler() {
+      const st = this.canal ? this.canal.presenceState() : {};
+      this.estado = Object.entries(st).map(([k, metas]) => ({ chave: k, ...(metas[metas.length - 1] || {}) }));
+      const el = $("#chip-online span");
+      if (el) el.textContent = String(this.estado.length || 1);
+      if ((location.hash || "").startsWith("#/online")) telaOnline();
+    },
+    mudouTela(onde) {
+      if (onde !== this.onde) { this.onde = onde; this.desde = Date.now(); }
+      this.atualizar();
+    },
+  };
+
+  function ondeDaRota(p) {
+    const r = p[0] || "mapa", n = +p[1], c = cap(n);
+    if (r === "cap") return c ? `Cap. ${n} · ${c.titulo}` : "Mapa da Jornada";
+    if (r === "licao") return c && c.licoes[+p[2]] ? `Cap. ${n} · Lição: ${c.licoes[+p[2]].titulo}` : "Lições";
+    if (r === "quiz") return c ? `Cap. ${n} · Quiz` : "Quiz";
+    if (r === "desafio") {
+      if (!c) return "Desafios";
+      return p[2] === "chefe" ? `Cap. ${n} · Chefão: ${c.chefe.titulo}` : `Cap. ${n} · Desafio: ${c.desafios[+p[2]]?.titulo || ""}`;
+    }
+    if (r === "projeto") { const pj = PROJETOS.find((x) => x.id === p[1]); return pj ? `Projeto ${pj.titulo}` : "Projetos"; }
+    return { diario: "⚡ Desafio do Dia", relampago: "⚡ Desafio Relâmpago", lab: "Laboratório", ranking: "Ranking",
+      perfil: "Perfil", projetos: "Projetos", online: "Vendo quem está online" }[r] || "Mapa da Jornada";
+  }
+
+  function telaOnline() {
+    if (!sb) { app.innerHTML = `<h1>Online agora</h1><p class="mudo">Essa parte precisa de conexão com o servidor, e o site está em modo offline.</p>`; return; }
+    const alunos = Online.estado.filter((e) => e.tipo === "aluno").sort((a, b) => (b.xp || 0) - (a.xp || 0));
+    const outros = Math.max(0, Online.estado.length - alunos.length);
+    const total = Math.max(Online.estado.length, 1);
+    let html = `<h1>Online agora</h1>
+      <p class="mudo" style="margin:4px 0 16px">${total} pessoa${total > 1 ? "s" : ""} no PyQuest neste momento. A lista se atualiza sozinha.</p>`;
+    html += alunos.length ? `<div class="online-lista">` + alunos.map((a) => {
+      const eu = usuario && a.chave === usuario.id;
+      const min = Math.max(0, Math.floor((Date.now() - (a.desde || Date.now())) / 60000));
+      const inicial = String(a.nome || "?").trim().charAt(0).toUpperCase();
+      return `<div class="online-item ${eu ? "eu" : ""}"><span class="avatar">${esc(inicial)}</span>
+        <div class="espaco"><b>${esc(a.nome)}</b>${eu ? ` <span class="mudo">(você)</span>` : ""}
+          <div class="mudo" style="font-size:13px">Nível ${esc(a.nivel)} · ${esc(a.xp)} XP</div></div>
+        <div class="onde"><span class="ponto"></span>${esc(a.onde || "")}<div class="mudo" style="font-size:12px">${min < 1 ? "agora" : `há ${min} min nesta página`}</div></div></div>`;
+    }).join("") + `</div>` : `<div class="cartao mudo">Nenhum aluno visível agora.</div>`;
+    if (outros) html += `<p class="mudo" style="margin-top:12px">+ ${outros} visitante${outros > 1 ? "s" : ""} ou aluno${outros > 1 ? "s" : ""} que ${outros > 1 ? "preferiram" : "preferiu"} não aparecer.</p>`;
+    if (usuario) {
+      html += `<label class="cartao linha check-online" style="margin-top:18px"><input type="checkbox" id="ck-online" ${S.oculto ? "" : "checked"}>
+        <span>Aparecer nesta lista (seu apelido, nível e a parte do curso em que você está)</span></label>`;
+    } else {
+      html += `<div class="cartao linha" style="margin-top:18px"><span class="espaco">Entre com Google para aparecer na lista com seu apelido.</span>${botaoGoogle("Entrar")}</div>`;
+    }
+    app.innerHTML = html;
+    ligarGoogle(app);
+    const ck = $("#ck-online");
+    if (ck) ck.onchange = () => { S.oculto = !ck.checked; salvar(); Online.atualizar(); };
+  }
 
   // =====================================================================
   // Roteador
@@ -563,6 +720,7 @@
     teclas = null;
     const p = hash.slice(2).split("/").filter(Boolean);
     const r = p[0] || "mapa";
+    Online.mudouTela(ondeDaRota(p));
     $$("#nav a").forEach((a) => a.classList.toggle("ativo",
       a.dataset.r === r || (a.dataset.r === "projetos" && r === "projeto") ||
       (["cap", "licao", "quiz", "desafio"].includes(r) && a.dataset.r === (+p[1] > ULTIMO_FUNDAMENTO ? "projetos" : "mapa"))));
@@ -571,7 +729,7 @@
       mapa: telaMapa, cap: () => telaCapitulo(+p[1]), licao: () => telaLicao(+p[1], +p[2]),
       quiz: () => telaQuiz(+p[1]), desafio: () => telaDesafio(+p[1], p[2]), relampago: telaRelampago,
       lab: telaLab, ranking: () => telaRanking(p[1] || "semana"), perfil: telaPerfil,
-      projetos: telaProjetos, projeto: () => telaProjeto(p[1]),
+      projetos: telaProjetos, projeto: () => telaProjeto(p[1]), diario: telaDiario, online: telaOnline,
     };
     try {
       (telas[r] || telaMapa)();
@@ -603,6 +761,7 @@
     html += prox
       ? `<div class="cartao proximo"><div class="espaco"><div class="mini verde">Próximo passo</div><h3>${esc(prox[0])}</h3></div><a class="btn" href="${prox[1]}">Continuar ▶</a></div>`
       : `<div class="cartao proximo"><h3 style="color:var(--verde)">Você completou a jornada! Treine no Relâmpago e no Laboratório.</h3></div>`;
+    html += cartaoDiario();
     html += `<h2 style="margin:6px 0 12px">Mapa da Jornada</h2><div class="mini roxo" style="margin:18px 0 8px">Parte I · Fundamentos</div>`;
     html += CAPS.filter((c) => c.num <= ULTIMO_FUNDAMENTO).map(cartaoCap).join("");
     const projLib = feito(`c${ULTIMO_FUNDAMENTO}-chefe`);
@@ -897,19 +1056,21 @@
     render();
   }
 
-  function telaDesafio(n, i) {
+  function telaDesafio(n, i, opt = {}) {
     const c = cap(n);
-    const chefe = i === "chefe";
+    const diario = opt.diario || null;
+    const chefe = !diario && i === "chefe";
     const d = c && (chefe ? c.chefe : c.desafios[+i]);
-    if (!d || !capLiberado(n)) { location.hash = "#/"; return; }
+    if (!d || (!diario && !capLiberado(n))) { location.hash = "#/"; return; }
     if (chefe && !chefeLiberado(n)) { location.hash = `#/cap/${n}`; return; }
     const idx = chefe ? "chefe" : +i;
-    const id = chefe ? `c${n}-chefe` : `c${n}-d${i}`;
-    const base = chefe ? XP.chefe : XP.desafio;
+    const id = diario ? `diario-${diario}` : chefe ? `c${n}-chefe` : `c${n}-d${i}`;
+    const base = diario ? XP.diario : chefe ? XP.chefe : XP.desafio;
+    const feito = (x) => (diario && x === id ? !!S.diarios[diario] : !!S.feitos[x]);
     const ctxTxt = descreverCtx(d.ctx);
 
-    app.innerHTML = `<a class="voltar" href="#/cap/${n}">← Capítulo ${n}</a>
-      <div class="linha"><div class="espaco"><div class="mini ${chefe ? "laranja" : "roxo"}">${chefe ? "Chefão" : `Desafio ${+i + 1} de ${c.desafios.length}`} · Capítulo ${n}</div>
+    app.innerHTML = `${diario ? `<a class="voltar" href="#/">← Mapa</a>` : `<a class="voltar" href="#/cap/${n}">← Capítulo ${n}</a>`}
+      <div class="linha"><div class="espaco"><div class="mini ${chefe || diario ? "laranja" : "roxo"}">${diario ? "⚡ Desafio do Dia" : chefe ? "Chefão" : `Desafio ${+i + 1} de ${c.desafios.length}`} · Capítulo ${n}</div>
       <h1>${chefe ? "♛ " : ""}${esc(d.titulo)}</h1></div>${feito(id) ? `<span style="color:var(--verde);font-weight:700">✔ Concluído</span>` : ""}</div>
       <div class="desafio" style="margin-top:16px">
         <div class="cartao"><div class="mini">Missão</div><div class="missao" style="margin-top:6px">${esc(d.enunciado)}</div>
@@ -926,6 +1087,7 @@
     Py.aquecer();
     const saida = criarSaida($("#out"));
     saida.add("Escreva seu código, clique em Executar para testar e em Verificar para validar.\n", "s-info");
+    if (diario) $("#b-sol").style.display = "none";
     const ed = criarEditor($("#ed"), S.codigo[id] ?? d.inicial, {
       aoMudar: (v) => { S.codigo[id] = v; salvar(); },
       aoExecutar: () => executar(),
@@ -973,7 +1135,10 @@
       }
       saida.add("✔ " + r.msg + "\n", "s-ok");
       let ganho = 0;
-      if (!feito(id)) {
+      if (diario && !feito(id)) {
+        ganho = concluirDiario(diario, `c${n}-d${i}`, S.dicas.includes(id) ? "dica" : "nenhuma");
+        atualizar();
+      } else if (!feito(id)) {
         const ajuda = S.solucoes.includes(id) ? "solucao" : S.dicas.includes(id) ? "dica" : "nenhuma";
         if (ajuda === "nenhuma") S.sem_dica++;
         if (tent() >= 3) conquistar("persistente");
@@ -986,7 +1151,8 @@
     }
     function vitoria(ganho) {
       let prox = "";
-      if (chefe) {
+      if (diario) prox = `<a class="btn" href="#/">Voltar ao mapa →</a>`;
+      else if (chefe) {
         const pj = projetoDoCap(n);
         if (n === ULTIMO_FUNDAMENTO) prox = `<a class="btn" href="#/projetos">Ver os projetos →</a>`;
         else if (pj && pj.caps.includes(n + 1)) prox = `<a class="btn" href="#/cap/${n + 1}">Ir para o Capítulo ${n + 1} →</a>`;
@@ -994,7 +1160,7 @@
         else prox = `<a class="btn" href="#/cap/${n + 1}">Ir para o Capítulo ${n + 1} →</a>`;
       }
       else prox = +i + 1 < c.desafios.length ? `<a class="btn" href="#/desafio/${n}/${+i + 1}">Próximo desafio →</a>` : `<a class="btn" href="#/cap/${n}">Voltar ao capítulo →</a>`;
-      const m = modal(`<h2>${chefe ? "♛ Chefão derrotado!" : "✔ Desafio concluído!"}</h2>
+      const m = modal(`<h2>${diario ? "⚡ Desafio do Dia concluído!" : chefe ? "♛ Chefão derrotado!" : "✔ Desafio concluído!"}</h2>
         ${ganho ? `<p style="color:var(--amarelo);font-weight:700;font-size:18px">+${ganho} XP</p>` : `<p class="mudo">Muito bem!</p>`}
         <div class="linha"><button class="btn neutro" data-a="fechar">Continuar aqui</button>${chefe ? `<button class="btn roxo" data-a="share">Compartilhar</button>` : ""}${prox}</div>`, { classe: "vitoria" });
       m.el.addEventListener("click", (e) => {
@@ -1009,7 +1175,7 @@
     $("#b-ver").onclick = verificar;
     $("#b-dica").onclick = async () => {
       if (!S.dicas.includes(id)) {
-        if (!feito(id) && !(await confirmar("Usar dica?", "A dica reduz a recompensa deste desafio pela metade."))) return;
+        if (!feito(id) && !(await confirmar("Usar dica?", `A dica reduz a recompensa ${diario ? "do Desafio do Dia" : "deste desafio"} pela metade.`))) return;
         S.dicas.push(id); salvar();
       }
       mostrarDica(); atualizar();
@@ -1172,6 +1338,7 @@
         <div class="stat"><b style="color:var(--laranja)">${cont("chefe")}/${CAPS.length}</b><span class="mudo">Chefões</span></div>
         <div class="stat"><b style="color:var(--rosa)">${S.recorde}</b><span class="mudo">Recorde ⚡</span></div>
         <div class="stat"><b style="color:var(--laranja)">${sequencia()} d</b><span class="mudo">Sequência</span></div>
+        <div class="stat"><b style="color:var(--laranja)">${Object.keys(S.diarios || {}).length}</b><span class="mudo">Desafios do Dia</span></div>
       </div>`;
     if (usuario) {
       html += `<div class="cartao" style="margin-bottom:18px"><div class="mini">Seu apelido no ranking</div>
@@ -1197,6 +1364,7 @@
       const { error } = await sb.from("perfis").update({ apelido: v }).eq("id", usuario.id);
       if (error) return toast(error.code === "23505" ? "Esse apelido já está em uso." : "Não deu para salvar: " + error.message, "vermelho");
       perfil = { ...perfil, apelido: v };
+      Online.atualizar();
       toast("Apelido salvo!", "verde");
     };
     const bs = $("#b-sair");
@@ -1208,6 +1376,7 @@
           sb.from("progresso").delete().eq("user_id", usuario.id),
           sb.from("bonus_diario").delete().eq("user_id", usuario.id),
           sb.from("relampago").delete().eq("user_id", usuario.id),
+          sb.from("desafio_diario").delete().eq("user_id", usuario.id),
         ]);
       }
       S = PADRAO();
@@ -1224,7 +1393,7 @@
   async function iniciar() {
     carregar(CHAVE_CONVIDADO);
     try {
-      const r = await fetch("conteudo.json?v=5");
+      const r = await fetch("conteudo.json?v=6");
       CAPS = await r.json();
     } catch {
       app.innerHTML = `<p>Não consegui carregar o conteúdo. Recarregue a página.</p>`;

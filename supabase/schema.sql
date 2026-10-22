@@ -273,6 +273,17 @@ create table if not exists public.bonus_diario (
   primary key (user_id, dia)
 );
 
+-- ---------- Desafio do Dia (um por dia; o XP é definido no servidor) ----------
+create table if not exists public.desafio_diario (
+  user_id   uuid not null references auth.users(id) on delete cascade,
+  dia       date not null default (now() at time zone 'America/Sao_Paulo')::date,
+  item_id   text not null references public.itens(id),
+  ajuda     text not null default 'nenhuma' check (ajuda in ('nenhuma', 'dica')),
+  xp        int  not null default 50,
+  criado_em timestamptz not null default now(),
+  primary key (user_id, dia)
+);
+
 -- ---------- Partidas do Desafio Relâmpago ----------
 create table if not exists public.relampago (
   id        bigint generated always as identity primary key,
@@ -317,6 +328,23 @@ drop trigger if exists bonus_regras on public.bonus_diario;
 create trigger bonus_regras before insert on public.bonus_diario
   for each row execute function public.tg_bonus();
 
+create or replace function public.tg_diario() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from public.itens where id = new.item_id and tipo = 'desafio') then
+    raise exception 'Desafio do Dia inválido.';
+  end if;
+  new.user_id := auth.uid();
+  new.dia := (now() at time zone 'America/Sao_Paulo')::date;
+  new.xp := case when new.ajuda = 'dica' then 25 else 50 end;
+  new.criado_em := now();
+  return new;
+end $$;
+
+drop trigger if exists diario_regras on public.desafio_diario;
+create trigger diario_regras before insert on public.desafio_diario
+  for each row execute function public.tg_diario();
+
 create or replace function public.tg_relampago() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
@@ -358,6 +386,7 @@ alter table public.itens        enable row level security;
 alter table public.perfis       enable row level security;
 alter table public.progresso    enable row level security;
 alter table public.bonus_diario enable row level security;
+alter table public.desafio_diario enable row level security;
 alter table public.relampago    enable row level security;
 
 drop policy if exists itens_ler on public.itens;
@@ -384,6 +413,12 @@ drop policy if exists bonus_criar on public.bonus_diario;
 create policy bonus_criar on public.bonus_diario for insert with check (user_id = auth.uid());
 drop policy if exists bonus_apagar on public.bonus_diario;
 create policy bonus_apagar on public.bonus_diario for delete using (user_id = auth.uid());
+drop policy if exists diario_ler on public.desafio_diario;
+create policy diario_ler on public.desafio_diario for select using (user_id = auth.uid());
+drop policy if exists diario_criar on public.desafio_diario;
+create policy diario_criar on public.desafio_diario for insert with check (user_id = auth.uid());
+drop policy if exists diario_apagar on public.desafio_diario;
+create policy diario_apagar on public.desafio_diario for delete using (user_id = auth.uid());
 
 drop policy if exists relampago_ler on public.relampago;
 create policy relampago_ler on public.relampago for select using (user_id = auth.uid());
@@ -407,6 +442,8 @@ language sql stable security definer set search_path = public as $$
     select p.user_id, p.xp, p.item_id, p.concluido_em as quando from public.progresso p
     union all
     select b.user_id, b.xp, 'bonus', b.criado_em from public.bonus_diario b
+    union all
+    select d.user_id, d.xp, 'diario', d.criado_em from public.desafio_diario d
   ),
   somas as (
     select e.user_id, sum(e.xp)::bigint as xp,
